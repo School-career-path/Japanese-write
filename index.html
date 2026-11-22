@@ -179,6 +179,9 @@
           <button onclick="randomQuestion()" class="px-3 py-1.5 rounded-full font-bold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition">
             🔀 랜덤
           </button>
+          <button id="mockExamBtn" onclick="toggleMockExam()" class="px-3 py-1.5 rounded-full font-bold bg-purple-600 text-white border border-purple-600 hover:bg-purple-700 shadow-sm transition">
+            📝 모의시험 (20문항)
+          </button>
           <button onclick="resetProgressCookie()" class="px-2.5 py-1.5 rounded-full font-bold bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200 transition" title="저장된 정오답 기록 초기화">
             🔄 기록 초기화
           </button>
@@ -194,18 +197,31 @@
 
       <!-- 문제 제시 카드 -->
       <section class="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+        <!-- 모의시험 전용 진행률 바 -->
+        <div id="mockExamBanner" class="hidden mb-3 p-3 rounded-xl bg-purple-50 border border-purple-200 flex flex-wrap items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <span class="px-2.5 py-1 rounded-lg bg-purple-600 text-white text-xs font-extrabold">📝 실전 모의시험 진행 중</span>
+            <span id="mockProgressText" class="text-sm font-extrabold text-purple-900">1 / 20 문항</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-purple-700 font-semibold hidden sm:inline">※ 시험 중에는 정오답과 힌트가 숨겨집니다</span>
+            <button onclick="exitMockExam()" class="px-2.5 py-1 rounded-lg text-xs font-bold bg-white text-purple-700 border border-purple-300 hover:bg-purple-100">시험 중단</button>
+          </div>
+        </div>
+
         <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
           <div class="flex items-center gap-2">
             <select id="questionSelect" onchange="selectQuestion(Number(this.value))" class="text-sm font-bold text-slate-700 bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"></select>
+            <span id="mockStepBadge" class="hidden text-sm font-extrabold px-3 py-1 rounded-lg bg-purple-100 text-purple-800 border border-purple-200">제 1번 문제</span>
             <span id="kanjiBadge" class="text-xs font-bold px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200">후리가나 필수 문항</span>
             <span id="statusBadge" class="hidden text-xs font-bold px-2.5 py-1 rounded-full"></span>
           </div>
 
           <div class="flex items-center gap-1.5">
-            <button onclick="prevQuestion()" class="px-2.5 py-1.5 text-xs font-bold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700">◀ 이전</button>
-            <button onclick="speakAnswer()" class="px-2.5 py-1.5 text-xs font-bold rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200">🔊 발음 듣기</button>
+            <button id="prevBtn" onclick="prevQuestion()" class="px-2.5 py-1.5 text-xs font-bold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700">◀ 이전</button>
+            <button id="speakBtn" onclick="speakAnswer()" class="px-2.5 py-1.5 text-xs font-bold rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200">🔊 발음 듣기</button>
             <button onclick="toggleHint()" id="hintBtn" class="px-2.5 py-1.5 text-xs font-bold rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200">💡 힌트 보기</button>
-            <button onclick="nextQuestion()" class="px-2.5 py-1.5 text-xs font-bold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700">다음 ▶</button>
+            <button id="nextBtn" onclick="nextQuestion()" class="px-2.5 py-1.5 text-xs font-bold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700">다음 ▶</button>
           </div>
         </div>
 
@@ -254,7 +270,7 @@
         </div>
 
         <!-- 하단 액션 버튼 -->
-        <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
+        <div id="practiceActionRow" class="flex flex-wrap items-center justify-between gap-2 pt-1">
           <div class="flex items-center gap-2">
             <button onclick="markResultManual(true)" class="px-3 py-2 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100">⭕ 직접 정답 체크</button>
             <button onclick="markResultManual(false)" class="px-3 py-2 rounded-xl text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100">❌ 오답 체크</button>
@@ -262,6 +278,16 @@
 
           <button id="gradeNowBtn" onclick="runGrading()" class="px-5 py-2.5 rounded-xl text-sm font-extrabold bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition">
             ✨ 지금 채점하기
+          </button>
+        </div>
+
+        <!-- 모의시험 전용 하단 제출 버튼 -->
+        <div id="mockActionRow" class="hidden flex flex-wrap items-center justify-between gap-2 pt-1">
+          <button id="mockPrevBtn" onclick="mockPrevStep()" class="px-4 py-2.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700">
+            ◀ 이전 문항 수정
+          </button>
+          <button id="mockSubmitNextBtn" onclick="mockNextStep()" class="px-6 py-2.5 rounded-xl text-sm font-extrabold bg-purple-600 hover:bg-purple-700 text-white shadow-sm transition">
+            다음 문장으로 ▶ (결과 비공개)
           </button>
         </div>
       </section>
@@ -302,6 +328,27 @@
           <div class="text-xs font-extrabold text-slate-700 mb-1.5">📝 정밀 채점 피드백 (누락 · 오탈자 분석)</div>
           <ul id="feedbackList" class="text-sm text-slate-700 space-y-1 list-disc list-inside"></ul>
         </div>
+      </section>
+
+      <!-- 모의시험 20문항 일괄 채점 결과 카드 -->
+      <section id="mockSummarySection" class="hidden rounded-2xl border border-purple-200 bg-white p-5 shadow-md space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-200">
+          <div>
+            <span class="text-xs font-extrabold px-2.5 py-1 rounded-full bg-purple-100 text-purple-800">모의시험 최종 성적표</span>
+            <h2 id="mockFinalScoreTitle" class="text-2xl font-extrabold text-slate-900 mt-1.5">총점: 0점 (0 / 20 정답)</h2>
+            <p class="text-xs text-slate-500 mt-0.5">모든 문항의 정오답 기록이 쿠키에 자동 반영되었습니다.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="startMockExam()" class="px-4 py-2 rounded-xl text-xs font-extrabold bg-purple-600 hover:bg-purple-700 text-white shadow-sm">
+              🔄 새 모의시험 다시 보기
+            </button>
+            <button onclick="exitMockExam()" class="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700">
+              연습 모드로 돌아가기
+            </button>
+          </div>
+        </div>
+
+        <div id="mockResultList" class="space-y-3"></div>
       </section>
 
     </main>
@@ -495,6 +542,12 @@
     let wrongIds = new Set();
     let appInitialized = false;
 
+    // 모의시험 상태 변수
+    let mockExamMode = false;
+    let mockQueue = [];       // 선정된 20개 문항의 QUESTIONS 인덱스 배열
+    let mockStep = 0;         // 0 ~ 19
+    let mockStrokesStore = []; // 각 문항별 작성한 strokes 스냅샷 저장
+
     // ==========================================
     // 3. 쿠키(Cookie) 기반 정오답 & 마지막 문항 저장/불러오기
     // ==========================================
@@ -554,6 +607,10 @@
     function updateCurrentStatusBadge() {
       const q = QUESTIONS[currentIndex];
       const badge = document.getElementById('statusBadge');
+      if (mockExamMode) {
+        badge.classList.add('hidden');
+        return;
+      }
       if (solvedIds.has(q.id)) {
         badge.classList.remove('hidden');
         badge.textContent = "⭕ 완료됨";
@@ -691,7 +748,7 @@
       if (!isDrawing) return;
       isDrawing = false;
       activeStroke = null;
-      if (autoGradeEnabled && hasPenStrokes()) scheduleAutoGrade();
+      if (!mockExamMode && autoGradeEnabled && hasPenStrokes()) scheduleAutoGrade();
     }
 
     function bindCanvasEvents() {
@@ -964,11 +1021,15 @@
     function loadQuestion(idx) {
       cancelAutoGradeTimer();
       currentIndex = idx;
-      saveProgressToCookie();
+      if (!mockExamMode) {
+        saveProgressToCookie();
+      }
 
       const q = QUESTIONS[currentIndex];
       document.getElementById('questionSelect').value = currentIndex;
-      document.getElementById('koreanPrompt').textContent = `${q.id}번. ${q.ko}`;
+      document.getElementById('koreanPrompt').textContent = mockExamMode
+        ? `[문제 ${mockStep + 1} / 20] ${q.ko}`
+        : `${q.id}번. ${q.ko}`;
 
       const badge = document.getElementById('kanjiBadge');
       if (q.kanjis.length > 0) {
@@ -1005,7 +1066,7 @@
       if (strokes.length > 0) {
         strokes.pop();
         redrawAllStrokes();
-        if (autoGradeEnabled && hasPenStrokes()) scheduleAutoGrade();
+        if (!mockExamMode && autoGradeEnabled && hasPenStrokes()) scheduleAutoGrade();
       }
     }
 
@@ -1118,6 +1179,308 @@
       const utter = new SpeechSynthesisUtterance(QUESTIONS[currentIndex].main);
       utter.lang = 'ja-JP'; utter.rate = 0.92;
       window.speechSynthesis.speak(utter);
+    }
+
+
+    // ==========================================
+    // 5. 실전 모의시험 (랜덤 20문항 중복 없이 출제 & 일괄 채점)
+    // ==========================================
+    function toggleMockExam() {
+      if (mockExamMode) {
+        exitMockExam();
+      } else {
+        startMockExam();
+      }
+    }
+
+    function startMockExam() {
+      cancelAutoGradeTimer();
+      mockExamMode = true;
+      wrongOnlyMode = false;
+      document.getElementById('wrongOnlyBtn').className = "px-3 py-1.5 rounded-full font-bold bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 transition";
+
+      // Fisher-Yates 셔플로 중복 없이 20문항 무작위 추출
+      const indices = QUESTIONS.map((_, i) => i);
+      for (let i = indices.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [indices[i], indices[j]] = [indices[j], indices[i]];
+      }
+      mockQueue = indices.slice(0, 20);
+      mockStep = 0;
+      mockStrokesStore = Array.from({ length: 20 }, () => []);
+
+      // UI 모드 전환
+      const mockBtn = document.getElementById('mockExamBtn');
+      mockBtn.textContent = "⏹ 모의시험 종료";
+      mockBtn.className = "px-3 py-1.5 rounded-full font-bold bg-slate-800 text-white border border-slate-800 shadow-sm transition";
+
+      document.getElementById('mockExamBanner').classList.remove('hidden');
+      document.getElementById('questionSelect').classList.add('hidden');
+      document.getElementById('mockStepBadge').classList.remove('hidden');
+      document.getElementById('prevBtn').classList.add('hidden');
+      document.getElementById('nextBtn').classList.add('hidden');
+      document.getElementById('hintBtn').classList.add('hidden');
+      document.getElementById('speakBtn').classList.add('hidden');
+      document.getElementById('practiceActionRow').classList.add('hidden');
+      document.getElementById('mockActionRow').classList.remove('hidden');
+      document.getElementById('resultSection').classList.add('hidden');
+      document.getElementById('mockSummarySection').classList.add('hidden');
+
+      renderMockStep();
+    }
+
+    function exitMockExam() {
+      if (mockExamMode && !document.getElementById('mockSummarySection').classList.contains('hidden') === false) {
+        if (!confirm("진행 중인 모의시험을 중단하고 일반 연습 모드로 돌아갈까요?")) return;
+      }
+      mockExamMode = false;
+      mockQueue = [];
+      mockStrokesStore = [];
+
+      const mockBtn = document.getElementById('mockExamBtn');
+      mockBtn.textContent = "📝 모의시험 (20문항)";
+      mockBtn.className = "px-3 py-1.5 rounded-full font-bold bg-purple-600 text-white border border-purple-600 hover:bg-purple-700 shadow-sm transition";
+
+      document.getElementById('mockExamBanner').classList.add('hidden');
+      document.getElementById('questionSelect').classList.remove('hidden');
+      document.getElementById('mockStepBadge').classList.add('hidden');
+      document.getElementById('prevBtn').classList.remove('hidden');
+      document.getElementById('nextBtn').classList.remove('hidden');
+      document.getElementById('hintBtn').classList.remove('hidden');
+      document.getElementById('speakBtn').classList.remove('hidden');
+      document.getElementById('practiceActionRow').classList.remove('hidden');
+      document.getElementById('mockActionRow').classList.add('hidden');
+      document.getElementById('mockSummarySection').classList.add('hidden');
+
+      loadQuestion(currentIndex);
+    }
+
+    function saveCurrentMockStrokes() {
+      mockStrokesStore[mockStep] = JSON.parse(JSON.stringify(strokes));
+    }
+
+    function renderMockStep() {
+      const qIdx = mockQueue[mockStep];
+      loadQuestion(qIdx);
+
+      // 이전에 작성해둔 획이 있다면 복원
+      strokes = JSON.parse(JSON.stringify(mockStrokesStore[mockStep] || []));
+      redrawAllStrokes();
+
+      document.getElementById('mockProgressText').textContent = `${mockStep + 1} / 20 문항`;
+      document.getElementById('mockStepBadge').textContent = `제 ${mockStep + 1}번 문제 (원문 #${QUESTIONS[qIdx].id})`;
+
+      const prevBtn = document.getElementById('mockPrevBtn');
+      prevBtn.disabled = (mockStep === 0);
+      prevBtn.className = mockStep === 0
+        ? "px-4 py-2.5 rounded-xl text-xs font-bold bg-slate-100 text-slate-400 cursor-not-allowed"
+        : "px-4 py-2.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700";
+
+      const nextBtn = document.getElementById('mockSubmitNextBtn');
+      if (mockStep === 19) {
+        nextBtn.textContent = "🏁 시험 종료 및 20문항 일괄 채점하기";
+        nextBtn.className = "px-6 py-2.5 rounded-xl text-sm font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition";
+      } else {
+        nextBtn.textContent = "다음 문장으로 ▶ (결과 비공개)";
+        nextBtn.className = "px-6 py-2.5 rounded-xl text-sm font-extrabold bg-purple-600 hover:bg-purple-700 text-white shadow-sm transition";
+      }
+    }
+
+    function mockPrevStep() {
+      if (!mockExamMode || mockStep <= 0) return;
+      saveCurrentMockStrokes();
+      mockStep--;
+      renderMockStep();
+    }
+
+    async function mockNextStep() {
+      if (!mockExamMode) return;
+      saveCurrentMockStrokes();
+
+      if (mockStep < 19) {
+        mockStep++;
+        renderMockStep();
+      } else {
+        if (!confirm("20번 문제까지 모두 마쳤습니다. 지금 일괄 채점 결과를 확인할까요?")) return;
+        await finishMockExam();
+      }
+    }
+
+    async function gradeSingleQuestionSilent(q, savedStrokes, width, height) {
+      const splitY = height * 0.36;
+      const furiStrokes = [];
+      const mainStrokes = [];
+
+      for (const s of savedStrokes) {
+        if (s.tool !== 'pen' || !s.points || s.points.length === 0) continue;
+        const avgY = s.points.reduce((acc, p) => acc + p.y, 0) / s.points.length;
+        if (avgY < splitY) furiStrokes.push(s);
+        else mainStrokes.push(s);
+      }
+
+      const feedbacks = [];
+      let isAllCorrect = true;
+      let recognizedMain = "";
+      let recognizedFuri = "";
+      const expectedFuriCombined = q.kanjis.map(item => item.r).join("");
+
+      if (mainStrokes.length === 0) {
+        isAllCorrect = false;
+        feedbacks.push("❌ 하단 본문 영역에 답안을 작성하지 않았습니다.");
+      } else {
+        const mainCandidates = await recognizeInk(mainStrokes, width, height);
+        recognizedMain = pickBestCandidate(mainCandidates, q.main);
+      }
+
+      if (q.kanjis.length > 0) {
+        if (furiStrokes.length === 0) {
+          isAllCorrect = false;
+          const listStr = q.kanjis.map(item => `'${item.k}'(${item.r})`).join(", ");
+          feedbacks.push(`❌ 상단 후리가나 미작성 (필수: ${listStr})`);
+        } else {
+          const furiCandidates = await recognizeInk(furiStrokes, width, height);
+          recognizedFuri = pickBestCandidate(furiCandidates, expectedFuriCombined);
+        }
+      }
+
+      if (mainStrokes.length > 0) {
+        const mainDiff = analyzeDiff(q.main, recognizedMain);
+        if (!mainDiff.exactMatch) {
+          isAllCorrect = false;
+          if (mainDiff.missing.length > 0) {
+            feedbacks.push(`🔍 본문 누락 글자: ${[...new Set(mainDiff.missing)].map(c => `'${c}'`).join(", ")}`);
+          }
+          for (const wp of mainDiff.wrongPairs) {
+            feedbacks.push(`✏️ 본문 오탈자: '${wp.expected}' → '${wp.actual}'(으)로 인식됨`);
+          }
+          if (mainDiff.extra.length > 0) {
+            feedbacks.push(`➕ 본문 불필요한 글자: ${[...new Set(mainDiff.extra)].map(c => `'${c}'`).join(", ")}`);
+          }
+        }
+      }
+
+      if (q.kanjis.length > 0 && furiStrokes.length > 0) {
+        const furiDiff = analyzeDiff(expectedFuriCombined, recognizedFuri);
+        if (!furiDiff.exactMatch) {
+          isAllCorrect = false;
+          const normFuri = normalizeJp(recognizedFuri);
+          for (const item of q.kanjis) {
+            if (!normFuri.includes(item.r)) {
+              feedbacks.push(`📌 후리가나 오류: '${item.k}'의 읽기 '${item.r}' 누락/오류`);
+            }
+          }
+          for (const wp of furiDiff.wrongPairs) {
+            feedbacks.push(`✏️ 후리가나 오탈자: '${wp.expected}' → '${wp.actual}'(으)로 쓰임`);
+          }
+        }
+      }
+
+      if (isAllCorrect) {
+        feedbacks.push("🎉 본문과 후리가나 모두 완벽하게 일치합니다!");
+      }
+
+      return {
+        isCorrect: isAllCorrect,
+        recognizedMain,
+        recognizedFuri,
+        feedbacks
+      };
+    }
+
+    async function finishMockExam() {
+      const nextBtn = document.getElementById('mockSubmitNextBtn');
+      const prevBtn = document.getElementById('mockPrevBtn');
+      nextBtn.disabled = true;
+      prevBtn.disabled = true;
+
+      const rect = wrapper.getBoundingClientRect();
+      const w = Math.round(rect.width) || 600;
+      const h = Math.round(rect.height) || 290;
+
+      const results = [];
+      let correctCount = 0;
+
+      try {
+        for (let i = 0; i < 20; i++) {
+          nextBtn.textContent = `⏳ 전체 채점 중... (${i + 1} / 20)`;
+          const q = QUESTIONS[mockQueue[i]];
+          const st = mockStrokesStore[i] || [];
+          const res = await gradeSingleQuestionSilent(q, st, w, h);
+
+          if (res.isCorrect) {
+            correctCount++;
+            solvedIds.add(q.id);
+            wrongIds.delete(q.id);
+          } else {
+            wrongIds.add(q.id);
+            solvedIds.delete(q.id);
+          }
+
+          results.push({ step: i + 1, q, ...res });
+        }
+
+        saveProgressToCookie();
+        updateCounters();
+        renderMockSummaryUI(correctCount, results);
+      } catch (err) {
+        alert("⚠️ 채점 서버 통신 중 오류가 발생했습니다. 인터넷 연결을 확인한 뒤 다시 '시험 종료 및 20문항 일괄 채점하기'를 눌러주세요.");
+      } finally {
+        nextBtn.disabled = false;
+        prevBtn.disabled = false;
+        nextBtn.textContent = "🏁 시험 종료 및 20문항 일괄 채점하기";
+      }
+    }
+
+    function renderMockSummaryUI(correctCount, results) {
+      document.getElementById('mockActionRow').classList.add('hidden');
+      const summarySec = document.getElementById('mockSummarySection');
+      summarySec.classList.remove('hidden');
+
+      const score = correctCount * 5;
+      document.getElementById('mockFinalScoreTitle').textContent = `총점: ${score}점 (${correctCount} / 20 문항 정답)`;
+
+      const listEl = document.getElementById('mockResultList');
+      listEl.innerHTML = results.map(r => {
+        const cardStyle = r.isCorrect
+          ? "border-emerald-200 bg-emerald-50/50"
+          : "border-rose-200 bg-rose-50/50";
+        const badgeHtml = r.isCorrect
+          ? `<span class="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-emerald-200 text-emerald-900">⭕ 정답</span>`
+          : `<span class="px-2.5 py-0.5 rounded-full text-xs font-extrabold bg-rose-200 text-rose-900">❌ 오답</span>`;
+
+        const furiDisplay = r.q.kanjis.length === 0
+          ? "<span class='text-slate-400 text-xs'>(해당 없음)</span>"
+          : `<span class="jp-font font-bold text-blue-700">${r.recognizedFuri || "(미작성)"}</span>`;
+
+        return `
+          <div class="rounded-xl border ${cardStyle} p-4">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <div class="flex items-center gap-2">
+                ${badgeHtml}
+                <span class="text-sm font-extrabold text-slate-800">제 ${r.step}번 (원문 #${r.q.id}) · ${r.q.ko}</span>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5 text-sm mb-2">
+              <div class="bg-white rounded-lg p-2.5 border border-slate-200/80">
+                <div class="text-xs font-bold text-slate-500 mb-0.5">내 필기 판독 결과</div>
+                <div>본문: <span class="jp-font font-bold text-slate-800">${r.recognizedMain || "(미작성)"}</span></div>
+                <div>후리가나: ${furiDisplay}</div>
+              </div>
+              <div class="bg-white rounded-lg p-2.5 border border-slate-200/80">
+                <div class="text-xs font-bold text-indigo-600 mb-0.5">모범 답안</div>
+                <div class="jp-font text-lg font-bold text-slate-900">${r.q.ruby}</div>
+              </div>
+            </div>
+
+            <ul class="text-xs text-slate-700 space-y-0.5 list-disc list-inside">
+              ${r.feedbacks.map(f => `<li>${f}</li>`).join('')}
+            </ul>
+          </div>
+        `;
+      }).join('');
+
+      summarySec.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
     function initAppOnce() {
