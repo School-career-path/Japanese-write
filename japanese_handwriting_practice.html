@@ -1,0 +1,1158 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>일본어 손글씨 & 후리가나 자동 채점 연습장</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body {
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #f3f5f9;
+      color: #1e293b;
+      overscroll-behavior: none;
+    }
+    .jp-font {
+      font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", "Noto Sans JP", sans-serif;
+    }
+    ruby rt {
+      font-size: 0.56em;
+      color: #2563eb;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    #canvasWrapper {
+      position: relative;
+      width: 100%;
+      height: 290px;
+      background-color: #ffffff;
+      background-image:
+        linear-gradient(to right, rgba(203, 213, 225, 0.35) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(203, 213, 225, 0.35) 1px, transparent 1px);
+      background-size: 24px 24px;
+      border-radius: 16px;
+      border: 2px solid #cbd5e1;
+      overflow: hidden;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    #drawCanvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 20;
+      cursor: crosshair;
+      touch-action: none;
+    }
+    .guide-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 10;
+      pointer-events: none;
+    }
+    .furigana-line {
+      position: absolute;
+      top: 34%;
+      left: 16px;
+      right: 16px;
+      border-bottom: 1.5px dashed #93c5fd;
+    }
+    .furigana-label {
+      position: absolute;
+      right: 18px;
+      top: calc(34% - 20px);
+      font-size: 11px;
+      font-weight: 700;
+      color: #3b82f6;
+      background: rgba(255,255,255,0.85);
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+    .baseline {
+      position: absolute;
+      top: 82%;
+      left: 16px;
+      right: 16px;
+      border-bottom: 1.5px dashed #cbd5e1;
+    }
+    .baseline-label {
+      position: absolute;
+      right: 18px;
+      top: calc(82% - 20px);
+      font-size: 11px;
+      font-weight: 700;
+      color: #64748b;
+      background: rgba(255,255,255,0.85);
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+    #overlayAnswer {
+      position: absolute;
+      inset: 0;
+      z-index: 15;
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      opacity: 0;
+      transition: opacity 0.25s ease;
+    }
+    #overlayAnswer.visible {
+      opacity: 0.34;
+    }
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-6px); }
+      40%, 80% { transform: translateX(6px); }
+    }
+    .animate-shake {
+      animation: shake 0.35s ease-in-out;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- 비밀번호 잠금 화면 (로그인 쿠키가 없을 때 표시) -->
+  <div id="authOverlay" class="fixed inset-0 z-50 bg-slate-900/90 backdrop-blur-sm flex items-center justify-center p-4">
+    <div id="authCard" class="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full p-6 sm:p-8">
+      <div class="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center font-extrabold text-xl mb-4 shadow-md">
+        🔒
+      </div>
+      <h2 class="text-xl font-extrabold text-slate-800 mb-1">학습장 접근 인증</h2>
+      <p class="text-xs text-slate-500 mb-5 leading-relaxed">
+        비밀번호를 입력하면 본 기기 쿠키에 로그인 기록이 저장되어 다음부터는 바로 접속됩니다.<br/>
+        (같은 폴더의 <code class="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-semibold">password.txt</code>에서 비밀번호를 변경할 수 있습니다)
+      </p>
+
+      <form onsubmit="handleLoginSubmit(event)" class="space-y-3">
+        <div>
+          <label for="passwordInput" class="block text-xs font-bold text-slate-700 mb-1">비밀번호</label>
+          <input
+            id="passwordInput"
+            type="password"
+            autocomplete="current-password"
+            placeholder="비밀번호를 입력하세요"
+            class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+            required
+          />
+        </div>
+
+        <p id="authErrorMsg" class="hidden text-xs font-bold text-rose-600"></p>
+
+        <button
+          type="submit"
+          class="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-sm shadow-sm transition"
+        >
+          확인 및 입장하기
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- 실제 학습 화면 래퍼 (인증 통과 후 표시) -->
+  <div id="appContainer" class="hidden min-h-screen flex flex-col">
+    <!-- 상단 헤더 -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+      <div class="max-w-5xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold text-lg shadow-sm">日</div>
+          <div>
+            <h1 class="text-base font-extrabold text-slate-800 leading-tight">일본어 손글씨 &amp; 후리가나 엄격 채점 연습장</h1>
+            <p class="text-xs text-slate-500">로그인 상태 및 정오답 기록이 브라우저 쿠키에 자동 저장됩니다</p>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2 text-xs">
+          <button id="toggleAutoBtn" onclick="toggleAutoGrade()" class="px-3 py-1.5 rounded-full font-bold bg-indigo-100 text-indigo-700 border border-indigo-200 transition">
+            ● 자동 채점 ON (5.0초)
+          </button>
+          <div class="px-3 py-1.5 rounded-full bg-slate-100 font-semibold text-slate-700">
+            완료 <span id="solvedCount" class="text-indigo-600 font-extrabold">0</span> / 78
+          </div>
+          <button id="wrongOnlyBtn" onclick="toggleWrongOnly()" class="px-3 py-1.5 rounded-full font-bold bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 transition">
+            ● 오답만 (<span id="wrongCount">0</span>)
+          </button>
+          <button onclick="randomQuestion()" class="px-3 py-1.5 rounded-full font-bold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition">
+            🔀 랜덤
+          </button>
+          <button onclick="resetProgressCookie()" class="px-2.5 py-1.5 rounded-full font-bold bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200 transition" title="저장된 정오답 기록 초기화">
+            🔄 기록 초기화
+          </button>
+          <button onclick="logoutAuthCookie()" class="px-2.5 py-1.5 rounded-full font-bold bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200 transition" title="로그인 쿠키 삭제 후 잠금">
+            🔒 잠금
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- 메인 학습 영역 -->
+    <main class="max-w-5xl w-full mx-auto px-4 py-4 flex-1 flex flex-col gap-4">
+
+      <!-- 문제 제시 카드 -->
+      <section class="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <div class="flex items-center gap-2">
+            <select id="questionSelect" onchange="selectQuestion(Number(this.value))" class="text-sm font-bold text-slate-700 bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"></select>
+            <span id="kanjiBadge" class="text-xs font-bold px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200">후리가나 필수 문항</span>
+            <span id="statusBadge" class="hidden text-xs font-bold px-2.5 py-1 rounded-full"></span>
+          </div>
+
+          <div class="flex items-center gap-1.5">
+            <button onclick="prevQuestion()" class="px-2.5 py-1.5 text-xs font-bold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700">◀ 이전</button>
+            <button onclick="speakAnswer()" class="px-2.5 py-1.5 text-xs font-bold rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200">🔊 발음 듣기</button>
+            <button onclick="toggleHint()" id="hintBtn" class="px-2.5 py-1.5 text-xs font-bold rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200">💡 힌트 보기</button>
+            <button onclick="nextQuestion()" class="px-2.5 py-1.5 text-xs font-bold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700">다음 ▶</button>
+          </div>
+        </div>
+
+        <div class="bg-slate-50 rounded-xl p-3.5 border border-slate-200/80">
+          <div class="text-xs font-bold text-indigo-600 mb-1">한국어 제시문 (일본어 + 한자·숫자 위 후리가나까지 쓰세요)</div>
+          <div id="koreanPrompt" class="text-lg sm:text-xl font-extrabold text-slate-800"></div>
+          <div id="hintBox" class="hidden mt-2 pt-2 border-t border-slate-200 text-sm text-slate-600"></div>
+        </div>
+      </section>
+
+      <!-- 손글씨 캔버스 카드 -->
+      <section class="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-col gap-3">
+        <!-- 필기 도구 툴바 -->
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <button id="penToolBtn" onclick="setTool('pen')" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-800 text-white">✏️ 펜</button>
+            <button id="eraserToolBtn" onclick="setTool('eraser')" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-700">🧽 지우개</button>
+            <div class="h-4 w-[1px] bg-slate-200 mx-0.5"></div>
+            <button onclick="setColor('#1e293b')" class="w-6 h-6 rounded-full bg-slate-800 border-2 border-white ring-2 ring-slate-300" title="검정"></button>
+            <button onclick="setColor('#2563eb')" class="w-6 h-6 rounded-full bg-blue-600 border-2 border-white ring-1 ring-slate-300" title="파랑"></button>
+            <button onclick="setColor('#dc2626')" class="w-6 h-6 rounded-full bg-red-600 border-2 border-white ring-1 ring-slate-300" title="빨강"></button>
+            <select id="lineWidthSelect" onchange="setLineWidth(Number(this.value))" class="ml-1 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg px-2 py-1">
+              <option value="2.5">얇게 (2.5px)</option>
+              <option value="3.5" selected>보통 (3.5px)</option>
+              <option value="5">굵게 (5px)</option>
+            </select>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <span id="countdownBadge" class="hidden text-xs font-extrabold px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-200">5.0초 후 자동 채점...</span>
+            <button onclick="undoStroke()" class="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700">↩ 한 획 취소</button>
+            <button onclick="clearCanvas()" class="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200">🗑️ 전체 지우기</button>
+          </div>
+        </div>
+
+        <!-- 캔버스 본체 -->
+        <div id="canvasWrapper">
+          <div class="guide-layer">
+            <div class="furigana-line"></div>
+            <div class="furigana-label">▲ 후리가나 영역 (한자 · 숫자 위 읽기)</div>
+            <div class="baseline"></div>
+            <div class="baseline-label">▲ 본문 영역 (한자 · 숫자 · 히라가나 · 가타카나)</div>
+          </div>
+          <div id="overlayAnswer" class="jp-font text-3xl sm:text-4xl font-bold text-indigo-600 text-center leading-relaxed"></div>
+          <canvas id="drawCanvas"></canvas>
+        </div>
+
+        <!-- 하단 액션 버튼 -->
+        <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
+          <div class="flex items-center gap-2">
+            <button onclick="markResultManual(true)" class="px-3 py-2 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100">⭕ 직접 정답 체크</button>
+            <button onclick="markResultManual(false)" class="px-3 py-2 rounded-xl text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100">❌ 오답 체크</button>
+          </div>
+
+          <button id="gradeNowBtn" onclick="runGrading()" class="px-5 py-2.5 rounded-xl text-sm font-extrabold bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition">
+            ✨ 지금 채점하기
+          </button>
+        </div>
+      </section>
+
+      <!-- 채점 결과 카드 -->
+      <section id="resultSection" class="hidden rounded-2xl border p-4 shadow-sm transition-all">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <div class="flex items-center gap-2">
+            <span id="resultTitle" class="text-base font-extrabold"></span>
+            <span id="resultScoreBadge" class="text-xs font-bold px-2.5 py-0.5 rounded-full"></span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="toggleOverlay()" id="overlayBtn" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-white border border-slate-300 text-slate-700 hover:bg-slate-50">🔍 내 글씨 위에 정답 겹쳐보기</button>
+            <button onclick="nextQuestion()" class="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 text-white hover:bg-indigo-700">다음 문제로 ▶</button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+          <div class="bg-white rounded-xl p-3 border border-slate-200/90">
+            <div class="text-xs font-bold text-blue-600 mb-1">🔼 상단 후리가나 판독</div>
+            <div id="recognizedFuriText" class="jp-font text-lg font-extrabold text-slate-800 min-h-[28px]">-</div>
+            <div id="expectedFuriHint" class="text-xs text-slate-500 mt-1"></div>
+          </div>
+
+          <div class="bg-white rounded-xl p-3 border border-slate-200/90">
+            <div class="text-xs font-bold text-amber-600 mb-1">🔽 하단 본문 판독</div>
+            <div id="recognizedMainText" class="jp-font text-lg font-extrabold text-slate-800 min-h-[28px]">-</div>
+            <div id="expectedMainHint" class="text-xs text-slate-500 mt-1"></div>
+          </div>
+
+          <div class="bg-white rounded-xl p-3 border border-slate-200/90">
+            <div class="text-xs font-bold text-indigo-600 mb-1">📖 모범 답안 (한자·숫자 + 후리가나)</div>
+            <div id="modelAnswerRuby" class="jp-font text-xl font-bold text-slate-900 leading-relaxed pt-1"></div>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-xl p-3 border border-slate-200/90">
+          <div class="text-xs font-extrabold text-slate-700 mb-1.5">📝 정밀 채점 피드백 (누락 · 오탈자 분석)</div>
+          <ul id="feedbackList" class="text-sm text-slate-700 space-y-1 list-disc list-inside"></ul>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script>
+    // ==========================================
+    // 1. 비밀번호 인증 & 쿠키 관리 (password.txt 연동 + 기본값 폴백)
+    // ==========================================
+    const DEFAULT_PASSWORD = "ansan2026210";
+    const AUTH_COOKIE_NAME = "jp_handwriting_auth_v1";
+    let activePassword = DEFAULT_PASSWORD;
+
+    function setCookie(name, value, days) {
+      const expires = new Date(Date.now() + days * 864e5).toUTCString();
+      document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/; SameSite=Lax`;
+    }
+
+    function getCookie(name) {
+      const target = name + "=";
+      const parts = document.cookie.split(';');
+      for (let part of parts) {
+        part = part.trim();
+        if (part.indexOf(target) === 0) {
+          return decodeURIComponent(part.substring(target.length));
+        }
+      }
+      return null;
+    }
+
+    function deleteCookie(name) {
+      document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Lax`;
+    }
+
+    // 같은 디렉토리의 password.txt 파일을 읽어 비밀번호 반영
+    async function loadPasswordFromFile() {
+      try {
+        const res = await fetch("password.txt?t=" + Date.now(), { cache: "no-store" });
+        if (res.ok) {
+          const text = (await res.text()).trim();
+          if (text.length > 0) {
+            activePassword = text;
+          }
+        }
+      } catch (e) {
+        // file:// 프로토콜 등에서 브라우저 보안 정책으로 fetch가 차단될 경우 기본값(ansan2026210) 유지
+      }
+    }
+
+    function isAuthenticated() {
+      const cookieVal = getCookie(AUTH_COOKIE_NAME);
+      if (cookieVal === activePassword) return true;
+      try {
+        if (localStorage.getItem(AUTH_COOKIE_NAME) === activePassword) return true;
+      } catch (e) {}
+      return false;
+    }
+
+    function saveAuthSession() {
+      setCookie(AUTH_COOKIE_NAME, activePassword, 365);
+      try { localStorage.setItem(AUTH_COOKIE_NAME, activePassword); } catch (e) {}
+    }
+
+    function logoutAuthCookie() {
+      deleteCookie(AUTH_COOKIE_NAME);
+      try { localStorage.removeItem(AUTH_COOKIE_NAME); } catch (e) {}
+      document.getElementById('appContainer').classList.add('hidden');
+      document.getElementById('authOverlay').classList.remove('hidden');
+      document.getElementById('passwordInput').value = "";
+      document.getElementById('authErrorMsg').classList.add('hidden');
+    }
+
+    function unlockApp() {
+      document.getElementById('authOverlay').classList.add('hidden');
+      document.getElementById('appContainer').classList.remove('hidden');
+      initAppOnce();
+    }
+
+    function handleLoginSubmit(e) {
+      e.preventDefault();
+      const input = document.getElementById('passwordInput');
+      const errEl = document.getElementById('authErrorMsg');
+      const card = document.getElementById('authCard');
+      const entered = input.value.trim();
+
+      if (entered === activePassword) {
+        saveAuthSession();
+        errEl.classList.add('hidden');
+        unlockApp();
+      } else {
+        errEl.textContent = "❌ 비밀번호가 일치하지 않습니다. 다시 확인해 주세요.";
+        errEl.classList.remove('hidden');
+        card.classList.remove('animate-shake');
+        void card.offsetWidth;
+        card.classList.add('animate-shake');
+        input.focus();
+        input.select();
+      }
+    }
+
+    // ==========================================
+    // 2. 78개 전체 문장 데이터 (숫자 후리가나 포함)
+    // ==========================================
+    const QUESTIONS = [
+      { id: 1, ko: "저부터 자기소개를 하겠습니다", main: "私から じこしょうかいを します", ruby: "<ruby>私<rt>わたし</rt></ruby>から じこしょうかいを します", kanjis: [{k:"私", r:"わたし"}] },
+      { id: 2, ko: "일본어 잘하시네요", main: "日本語 上手ですね", ruby: "<ruby>日<rt>に</rt></ruby><ruby>本<rt>ほん</rt></ruby><ruby>語<rt>ご</rt></ruby> <ruby>上<rt>じょう</rt></ruby><ruby>手<rt>ず</rt></ruby>ですね", kanjis: [{k:"日本語", r:"にほんご"}, {k:"上手", r:"じょうず"}] },
+      { id: 3, ko: "아니요, 그렇지 않습니다", main: "いいえ、そんなことありません", ruby: "いいえ、そんなことありません", kanjis: [] },
+      { id: 4, ko: "아니요, 아직 멀었습니다", main: "いいえ、まだまだです", ruby: "いいえ、まだまだです", kanjis: [] },
+      { id: 5, ko: "다나카 씨와 사토 씨의 취미는 무엇입니까", main: "たなかさんと さとうさんの しゅみは 何ですか", ruby: "たなかさんと さとうさんの しゅみは <ruby>何<rt>なん</rt></ruby>ですか", kanjis: [{k:"何", r:"なん"}] },
+      { id: 6, ko: "쿠키나 빵, 그리고 케이크도 만듭니다", main: "クッキーや パン、それから ケーキも つくります", ruby: "クッキーや パン、それから ケーキも つくります", kanjis: [] },
+      { id: 7, ko: "과자 만들기는 어렵지 않습니까", main: "おかしづくりは むずかしくないですか", ruby: "おかしづくりは むずかしくないですか", kanjis: [] },
+      { id: 8, ko: "축구부는 매일 연습이 있습니까", main: "サッカー部は、毎日 れんしゅうが ありますか", ruby: "サッカー<ruby>部<rt>ぶ</rt></ruby>は、<ruby>毎<rt>まい</rt></ruby><ruby>日<rt>にち</rt></ruby> れんしゅうが ありますか", kanjis: [{k:"部", r:"ぶ"}, {k:"毎日", r:"まいにち"}] },
+      { id: 9, ko: "연습은 몇 시부터 몇 시까지입니까", main: "れんしゅうは 何時から 何時までですか", ruby: "れんしゅうは <ruby>何<rt>なん</rt></ruby><ruby>時<rt>じ</rt></ruby>から <ruby>何<rt>なん</rt></ruby><ruby>時<rt>じ</rt></ruby>までですか", kanjis: [{k:"何時", r:"なんじ"}, {k:"何時", r:"なんじ"}] },
+      { id: 10, ko: "4시부터 6시까지 매일 있습니다", main: "4時から 6時まで 毎日 あります", ruby: "<ruby>4<rt>よ</rt></ruby><ruby>時<rt>じ</rt></ruby>から <ruby>6<rt>ろく</rt></ruby><ruby>時<rt>じ</rt></ruby>まで <ruby>毎<rt>まい</rt></ruby><ruby>日<rt>にち</rt></ruby> あります", kanjis: [{k:"4時", r:"よじ"}, {k:"6時", r:"ろくじ"}, {k:"毎日", r:"まいにち"}] },
+      { id: 11, ko: "모두의 꿈은 무엇입니까", main: "みんなの ゆめは 何ですか", ruby: "みんなの ゆめは <ruby>何<rt>なん</rt></ruby>ですか", kanjis: [{k:"何", r:"なん"}] },
+      { id: 12, ko: "저는 아나운서가 되고 싶습니다", main: "私は アナウンサーに なりたいです", ruby: "<ruby>私<rt>わたし</rt></ruby>は アナウンサーに なりたいです", kanjis: [{k:"私", r:"わたし"}] },
+      { id: 13, ko: "저는 축구 선수가 되고 싶습니다", main: "私は サッカー せんしゅに なりたいです", ruby: "<ruby>私<rt>わたし</rt></ruby>は サッカー せんしゅに なりたいです", kanjis: [{k:"私", r:"わたし"}] },
+      { id: 14, ko: "오늘은 숙제가 있어서 바쁩니다", main: "今日は しゅくだいが ありますから いそがしいです", ruby: "<ruby>今<rt>きょ</rt></ruby><ruby>日<rt>う</rt></ruby>は しゅくだいが ありますから いそがしいです", kanjis: [{k:"今日", r:"きょう"}] },
+      { id: 15, ko: "내일은 시간이 있어서 괜찮습니다", main: "明日は 時間が ありますから だいじょうぶです", ruby: "<ruby>明日<rt>あした</rt></ruby>は <ruby>時<rt>じ</rt></ruby><ruby>間<rt>かん</rt></ruby>が ありますから だいじょうぶです", kanjis: [{k:"明日", r:"あした"}, {k:"時間", r:"じかん"}] },
+      { id: 16, ko: "일본의 고등학생도 아르바이트할 수 있습니까", main: "日本の 高校生も バイトできますか", ruby: "<ruby>日<rt>に</rt></ruby><ruby>本<rt>ほん</rt></ruby>の <ruby>高<rt>こう</rt></ruby><ruby>校<rt>こう</rt></ruby><ruby>生<rt>せい</rt></ruby>も バイトできますか", kanjis: [{k:"日本", r:"にほん"}, {k:"高校生", r:"こうこうせい"}] },
+      { id: 17, ko: "수요일이라면 괜찮지만, 목요일은 좀...", main: "水ようびなら だいじょうぶですが、木ようびは ちょっと", ruby: "<ruby>水<rt>すい</rt></ruby>ようびなら だいじょうぶですが、<ruby>木<rt>もく</rt></ruby>ようびは ちょっと", kanjis: [{k:"水", r:"すい"}, {k:"木", r:"もく"}] },
+      { id: 18, ko: "이유미 씨, 일본에는 언제 옵니까", main: "イユミさん、日本には いつ 来ますか", ruby: "イユミさん、<ruby>日<rt>に</rt></ruby><ruby>本<rt>ほん</rt></ruby>には いつ <ruby>来<rt>き</rt></ruby>ますか", kanjis: [{k:"日本", r:"にほん"}, {k:"来", r:"き"}] },
+      { id: 19, ko: "7월 20일에 갑니다", main: "7月 20日に 行きます", ruby: "<ruby>7<rt>しち</rt></ruby><ruby>月<rt>がつ</rt></ruby> <ruby>20日<rt>はつか</rt></ruby>に <ruby>行<rt>い</rt></ruby>きます", kanjis: [{k:"7月", r:"しちがつ"}, {k:"20日", r:"はつか"}, {k:"行", r:"い"}] },
+      { id: 20, ko: "9월 14일에 갑니다", main: "9月 14日に 行きます", ruby: "<ruby>9<rt>く</rt></ruby><ruby>月<rt>がつ</rt></ruby> <ruby>14日<rt>じゅうよっか</rt></ruby>に <ruby>行<rt>い</rt></ruby>きます", kanjis: [{k:"9月", r:"くがつ"}, {k:"14日", r:"じゅうよっか"}, {k:"行", r:"い"}] },
+      { id: 21, ko: "4월 9일에 갑니다", main: "4月 9日に 行きます", ruby: "<ruby>4<rt>し</rt></ruby><ruby>月<rt>がつ</rt></ruby> <ruby>9日<rt>ここのか</rt></ruby>に <ruby>行<rt>い</rt></ruby>きます", kanjis: [{k:"4月", r:"しがつ"}, {k:"9日", r:"ここのか"}, {k:"行", r:"い"}] },
+      { id: 22, ko: "7월 7일에 갑니다", main: "7月 7日に 行きます", ruby: "<ruby>7<rt>しち</rt></ruby><ruby>月<rt>がつ</rt></ruby> <ruby>7日<rt>なのか</rt></ruby>に <ruby>行<rt>い</rt></ruby>きます", kanjis: [{k:"7月", r:"しちがつ"}, {k:"7日", r:"なのか"}, {k:"行", r:"い"}] },
+      { id: 23, ko: "어딘가 가고 싶은 곳이 있습니까", main: "どこか 行きたい ところが ありますか", ruby: "どこか <ruby>行<rt>い</rt></ruby>きたい ところが ありますか", kanjis: [{k:"行", r:"い"}] },
+      { id: 24, ko: "테마파크에 가고 싶습니다", main: "テーマパークに 行きたいです", ruby: "テーマパークに <ruby>行<rt>い</rt></ruby>きたいです", kanjis: [{k:"行", r:"い"}] },
+      { id: 25, ko: "저는 기온 마츠리를 보고 싶습니다", main: "私は ぎおんまつりが 見たいです", ruby: "<ruby>私<rt>わたし</rt></ruby>は ぎおんまつりが <ruby>見<rt>み</rt></ruby>たいです", kanjis: [{k:"私", r:"わたし"}, {k:"見", r:"み"}] },
+      { id: 26, ko: "일본 라면을 먹고 싶습니다", main: "日本の ラーメンを 食べたいです", ruby: "<ruby>日<rt>に</rt></ruby><ruby>本<rt>ほん</rt></ruby>の ラーメンを <ruby>食<rt>た</rt></ruby>べたいです", kanjis: [{k:"日本", r:"にほん"}, {k:"食", r:"た"}] },
+      { id: 27, ko: "이제부터는 모두 이름으로 부르지 않을래요?", main: "これからは みんな 下の なまえで よびませんか", ruby: "これからは みんな <ruby>下<rt>した</rt></ruby>の なまえで よびませんか", kanjis: [{k:"下", r:"した"}] },
+      { id: 28, ko: "주말에 뭔가 하고 싶은 것이 있습니까", main: "しゅうまつ、何か したい ことが ありますか", ruby: "しゅうまつ、<ruby>何<rt>なに</rt></ruby>か したい ことが ありますか", kanjis: [{k:"何", r:"なに"}] },
+      { id: 29, ko: "네, 친구와 놀고 싶습니다", main: "はい、ともだちと あそびたいです", ruby: "はい、ともだちと あそびたいです", kanjis: [] },
+      { id: 30, ko: "쇼핑을 하고 싶습니다", main: "かいものを したいです", ruby: "かいものを したいです", kanjis: [] },
+      { id: 31, ko: "영화를 보고 싶습니다", main: "えいがを 見たいです", ruby: "えいがを <ruby>見<rt>み</rt></ruby>たいです", kanjis: [{k:"見", r:"み"}] },
+      { id: 32, ko: "홋카이도에 가고 싶습니다", main: "ほっかいどうに 行きたいです", ruby: "ほっかいどうに <ruby>行<rt>い</rt></ruby>きたいです", kanjis: [{k:"行", r:"い"}] },
+      { id: 33, ko: "한국 김, 정말 좋아합니다", main: "韓国の のり、大好きです", ruby: "<ruby>韓<rt>かん</rt></ruby><ruby>国<rt>こく</rt></ruby>の のり、<ruby>大<rt>だい</rt></ruby><ruby>好<rt>す</rt></ruby>きです", kanjis: [{k:"韓国", r:"かんこく"}, {k:"大好", r:"だいす"}] },
+      { id: 34, ko: "여기서 어떻게 가니?", main: "ここから どうやって 行くの", ruby: "ここから どうやって <ruby>行<rt>い</rt></ruby>くの", kanjis: [{k:"行", r:"い"}] },
+      { id: 35, ko: "먼저, 버스로 오사카역까지 가서", main: "まず、バスで おおさかえきまで 行って", ruby: "まず、バスで おおさかえきまで <ruby>行<rt>い</rt></ruby>って", kanjis: [{k:"行", r:"い"}] },
+      { id: 36, ko: "그다음 전철로 갈아타", main: "それから でんしゃに のりかえるよ", ruby: "それから でんしゃに のりかえるよ", kanjis: [] },
+      { id: 37, ko: "와아, 벌써 저렇게 사람이 줄 서 있어", main: "わあ、もう あんなに 人が ならんでいる", ruby: "わあ、もう あんなに <ruby>人<rt>ひと</rt></ruby>が ならんでいる", kanjis: [{k:"人", r:"ひと"}] },
+      { id: 38, ko: "전혀 무섭지 않아", main: "ぜんぜん こわくないよ", ruby: "ぜんぜん こわくないよ", kanjis: [] },
+      { id: 39, ko: "도쿄까지 신칸센으로 갑니다", main: "とうきょうまで しんかんせんで 行きます", ruby: "とうきょうまで しんかんせんで <ruby>行<rt>い</rt></ruby>きます", kanjis: [{k:"行", r:"い"}] },
+      { id: 40, ko: "후쿠오카까지 배로 갑니다", main: "ふくおかまで ふねで 行きます", ruby: "ふくおかまで ふねで <ruby>行<rt>い</rt></ruby>きます", kanjis: [{k:"行", r:"い"}] },
+      { id: 41, ko: "오키나와까지 비행기로 갑니다", main: "おきなわまで ひこうきで 行きます", ruby: "おきなわまで ひこうきで <ruby>行<rt>い</rt></ruby>きます", kanjis: [{k:"行", r:"い"}] },
+      { id: 42, ko: "농구를 하고 있습니다", main: "バスケを しています", ruby: "バスケを しています", kanjis: [] },
+      { id: 43, ko: "케이크를 만들고 있습니다", main: "ケーキを つくっています", ruby: "ケーキを つくっています", kanjis: [] },
+      { id: 44, ko: "밥을 먹고 있습니다", main: "ごはんを 食べています", ruby: "ごはんを <ruby>食<rt>た</rt></ruby>べています", kanjis: [{k:"食", r:"た"}] },
+      { id: 45, ko: "친구와 놀고 있습니다", main: "ともだちと あそんでいます", ruby: "ともだちと あそんでいます", kanjis: [] },
+      { id: 46, ko: "영어보다 수학 쪽이 좋습니다", main: "えいごより すうがくの ほうが いいです", ruby: "えいごより すうがくの ほうが いいです", kanjis: [] },
+      { id: 47, ko: "홋카이도보다 규슈 쪽이 큽니다", main: "ほっかいどうより きゅうしゅうの ほうが おおきいです", ruby: "ほっかいどうより きゅうしゅうの ほうが おおきいです", kanjis: [] },
+      { id: 48, ko: "축구보다 야구 쪽이 재미있습니다", main: "サッカーより やきゅうの ほうが おもしろいです", ruby: "サッカーより やきゅうの ほうが おもしろいです", kanjis: [] },
+      { id: 49, ko: "기타를 칠 수 있습니까", main: "ギターを ひく ことが できますか", ruby: "ギターを ひく ことが できますか", kanjis: [] },
+      { id: 50, ko: "가타카나를 쓸 수 있습니까", main: "カタカナを かく ことが できますか", ruby: "カタカナを かく ことが できますか", kanjis: [] },
+      { id: 51, ko: "자전거를 탈 수 있습니까", main: "じてんしゃに のる ことが できますか", ruby: "じてんしゃに のる ことが できますか", kanjis: [] },
+      { id: 52, ko: "영어 신문을 읽을 수 있습니까", main: "えいごの しんぶんを よむ ことが できますか", ruby: "えいごの しんぶんを よむ ことが できますか", kanjis: [] },
+      { id: 53, ko: "이 로봇, 여러 가지를 가르쳐 줘", main: "この ロボット、いろいろ おしえて くれるよ", ruby: "この ロボット、いろいろ おしえて くれるよ", kanjis: [] },
+      { id: 54, ko: "이 로봇에게 장소를 물어볼까?", main: "この ロボットに ばしょを 聞いて みる", ruby: "この ロボットに ばしょを <ruby>聞<rt>き</rt></ruby>いて みる", kanjis: [{k:"聞", r:"き"}] },
+      { id: 55, ko: "축구 선수가 될 수 있는지 물어본다", main: "サッカーせんしゅに なる ことが できるか 聞いて みる", ruby: "サッカーせんしゅに なる ことが できるか <ruby>聞<rt>き</rt></ruby>いて みる", kanjis: [{k:"聞", r:"き"}] },
+      { id: 56, ko: "그건 가르쳐 주지 않을 것 같지만...", main: "それは おしえて くれないと おもうけど", ruby: "それは おしえて くれないと おもうけど", kanjis: [] },
+      { id: 57, ko: "내일은 덥다고 합니다", main: "明日は あついそうです", ruby: "<ruby>明日<rt>あした</rt></ruby>は あついそうです", kanjis: [{k:"明日", r:"あした"}] },
+      { id: 58, ko: "이 더위는 8월 말까지 계속된다고 합니다", main: "この あつさは 8月まつまで つづくそうです", ruby: "この あつさは <ruby>8<rt>はち</rt></ruby><ruby>月<rt>がつ</rt></ruby>まつまで つづくそうです", kanjis: [{k:"8月", r:"はちがつ"}] },
+      { id: 59, ko: "여러분, 몸조심하세요", main: "みなさん、からだに 気を つけて ください", ruby: "みなさん、からだに <ruby>気<rt>き</rt></ruby>を つけて ください", kanjis: [{k:"気", r:"き"}] },
+      { id: 60, ko: "긴장해서 잘 읽을 수 없었다", main: "きんちょうして、うまく よむ ことが できなかった", ruby: "きんちょうして、うまく よむ ことが できなかった", kanjis: [] },
+      { id: 61, ko: "함께 사진을 찍어도 됩니까", main: "いっしょに しゃしんを とっても いいですか", ruby: "いっしょに しゃしんを とっても いいですか", kanjis: [] },
+      { id: 62, ko: "애니메이션은 매우 재미있었습니다", main: "アニメは とても おもしろかったです", ruby: "アニメは とても おもしろかったです", kanjis: [] },
+      { id: 63, ko: "여행은 그다지 재미없었습니다", main: "りょこうは あまり おもしろくなかったです", ruby: "りょこうは あまり おもしろくなかったです", kanjis: [] },
+      { id: 64, ko: "축구부 연습은 힘들었습니다", main: "サッカー部の れんしゅうは たいへんでした", ruby: "サッカー<ruby>部<rt>ぶ</rt></ruby>の れんしゅうは たいへんでした", kanjis: [{k:"部", r:"ぶ"}] },
+      { id: 65, ko: "축구부 연습은 힘들지 않았습니다", main: "サッカー部の れんしゅうは たいへんじゃなかったです", ruby: "サッカー<ruby>部<rt>ぶ</rt></ruby>の れんしゅうは たいへんじゃなかったです", kanjis: [{k:"部", r:"ぶ"}] },
+      { id: 66, ko: "우산을 빌려도 됩니까", main: "かさを かりても いいですか", ruby: "かさを かりても いいですか", kanjis: [] },
+      { id: 67, ko: "화장실에 가도 됩니까", main: "トイレに 行っても いいですか", ruby: "トイレに <ruby>行<rt>い</rt></ruby>っても いいですか", kanjis: [{k:"行", r:"い"}] },
+      { id: 68, ko: "주스를 마셔도 됩니까", main: "ジュースを のんでも いいですか", ruby: "ジュースを のんでも いいですか", kanjis: [] },
+      { id: 69, ko: "이 그림을 만져도 됩니까", main: "この えを さわっても いいですか", ruby: "この えを さわっても いいですか", kanjis: [] },
+      { id: 70, ko: "조금 어렵지만, 매우 즐겁습니다", main: "すこし むずかしいですが、とても たのしいです", ruby: "すこし むずかしいですが、とても たのしいです", kanjis: [] },
+      { id: 71, ko: "선생님은 상냥하지만, 매우 엄격합니다", main: "せんせいは やさしいですが、とても きびしいです", ruby: "せんせいは やさしいですが、とても きびしいです", kanjis: [] },
+      { id: 72, ko: "김치는 맵지만, 매우 맛있습니다", main: "キムチは からいですが、とても おいしいです", ruby: "キムチは からいですが、とても おいしいです", kanjis: [] },
+      { id: 73, ko: "어제는 9시에 집에 돌아왔습니다", main: "きのうは 9時に 家に 帰りました", ruby: "きのうは <ruby>9<rt>く</rt></ruby><ruby>時<rt>じ</rt></ruby>に <ruby>家<rt>いえ</rt></ruby>に <ruby>帰<rt>かえ</rt></ruby>りました", kanjis: [{k:"9時", r:"くじ"}, {k:"家", r:"いえ"}, {k:"帰", r:"かえ"}] },
+      { id: 74, ko: "저 사람, 유명한 축구 선수 아니야?", main: "あの 人、ゆうめいな サッカーせんしゅじゃない", ruby: "あの <ruby>人<rt>ひと</rt></ruby>、ゆうめいな サッカーせんしゅじゃない", kanjis: [{k:"人", r:"ひと"}] },
+      { id: 75, ko: "내일은 따뜻하다고 합니다", main: "明日は あたたかいそうです", ruby: "<ruby>明日<rt>あした</rt></ruby>は あたたかいそうです", kanjis: [{k:"明日", r:"あした"}] },
+      { id: 76, ko: "내일은 덥다고 합니다", main: "明日は あついそうです", ruby: "<ruby>明日<rt>あした</rt></ruby>は あついそうです", kanjis: [{k:"明日", r:"あした"}] },
+      { id: 77, ko: "내일은 시원하다고 합니다", main: "明日は すずしいそうです", ruby: "<ruby>明日<rt>あした</rt></ruby>は すずしいそうです", kanjis: [{k:"明日", r:"あした"}] },
+      { id: 78, ko: "내일은 춥다고 합니다", main: "明日は さむいそうです", ruby: "<ruby>明日<rt>あした</rt></ruby>は さむいそうです", kanjis: [{k:"明日", r:"あした"}] }
+    ];
+
+    let currentIndex = 0;
+    let autoGradeEnabled = true;
+    let wrongOnlyMode = false;
+    let autoGradeTimer = null;
+    let countdownInterval = null;
+    let solvedIds = new Set();
+    let wrongIds = new Set();
+    let appInitialized = false;
+
+    // ==========================================
+    // 3. 쿠키(Cookie) 기반 정오답 & 마지막 문항 저장/불러오기
+    // ==========================================
+    const PROGRESS_COOKIE_NAME = "jp_handwriting_progress_v1";
+
+    function saveProgressToCookie() {
+      const payload = JSON.stringify({
+        solved: Array.from(solvedIds),
+        wrong: Array.from(wrongIds),
+        lastIdx: currentIndex
+      });
+      setCookie(PROGRESS_COOKIE_NAME, payload, 365);
+      try { localStorage.setItem(PROGRESS_COOKIE_NAME, payload); } catch (e) {}
+      refreshDropdownLabels();
+      updateCurrentStatusBadge();
+    }
+
+    function loadProgressFromCookie() {
+      let raw = getCookie(PROGRESS_COOKIE_NAME);
+      if (!raw) {
+        try { raw = localStorage.getItem(PROGRESS_COOKIE_NAME); } catch (e) {}
+      }
+      if (!raw) return;
+      try {
+        const data = JSON.parse(raw);
+        if (Array.isArray(data.solved)) solvedIds = new Set(data.solved);
+        if (Array.isArray(data.wrong)) wrongIds = new Set(data.wrong);
+        if (typeof data.lastIdx === 'number' && data.lastIdx >= 0 && data.lastIdx < QUESTIONS.length) {
+          currentIndex = data.lastIdx;
+        }
+      } catch (e) {}
+    }
+
+    function resetProgressCookie() {
+      if (!confirm("쿠키에 저장된 모든 정오답 체크 기록을 초기화할까요?")) return;
+      solvedIds.clear();
+      wrongIds.clear();
+      wrongOnlyMode = false;
+      const btn = document.getElementById('wrongOnlyBtn');
+      btn.className = "px-3 py-1.5 rounded-full font-bold bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 transition";
+      saveProgressToCookie();
+      updateCounters();
+      loadQuestion(0);
+    }
+
+    function refreshDropdownLabels() {
+      const sel = document.getElementById('questionSelect');
+      if (!sel || sel.options.length === 0) return;
+      QUESTIONS.forEach((q, idx) => {
+        let prefix = "";
+        if (solvedIds.has(q.id)) prefix = "⭕ ";
+        else if (wrongIds.has(q.id)) prefix = "❌ ";
+        sel.options[idx].textContent = `${prefix}${q.id}번. ${q.ko.slice(0, 21)}${q.ko.length > 21 ? '...' : ''}`;
+      });
+    }
+
+    function updateCurrentStatusBadge() {
+      const q = QUESTIONS[currentIndex];
+      const badge = document.getElementById('statusBadge');
+      if (solvedIds.has(q.id)) {
+        badge.classList.remove('hidden');
+        badge.textContent = "⭕ 완료됨";
+        badge.className = "text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200";
+      } else if (wrongIds.has(q.id)) {
+        badge.classList.remove('hidden');
+        badge.textContent = "❌ 오답 기록됨";
+        badge.className = "text-xs font-bold px-2.5 py-1 rounded-full bg-rose-100 text-rose-800 border border-rose-200";
+      } else {
+        badge.classList.add('hidden');
+      }
+    }
+
+    // ==========================================
+    // 4. 캔버스 및 필기 입력 처리
+    // ==========================================
+    const wrapper = document.getElementById('canvasWrapper');
+    const canvas = document.getElementById('drawCanvas');
+    const ctx = canvas.getContext('2d');
+    let isDrawing = false;
+    let currentTool = 'pen';
+    let strokeColor = '#1e293b';
+    let strokeWidth = 3.5;
+    let strokes = [];
+    let activeStroke = null;
+    let strokeStartTime = 0;
+
+    function resizeCanvas() {
+      const rect = wrapper.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.round(rect.width * dpr);
+      canvas.height = Math.round(rect.height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      redrawAllStrokes();
+    }
+
+    function redrawAllStrokes() {
+      const rect = wrapper.getBoundingClientRect();
+      ctx.clearRect(0, 0, rect.width, rect.height);
+      for (const s of strokes) {
+        if (!s.points.length) continue;
+        ctx.save();
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        if (s.tool === 'eraser') {
+          ctx.globalCompositeOperation = 'destination-out';
+          ctx.lineWidth = s.width * 4.5;
+        } else {
+          ctx.globalCompositeOperation = 'source-over';
+          ctx.strokeStyle = s.color;
+          ctx.lineWidth = s.width;
+        }
+        ctx.beginPath();
+        ctx.moveTo(s.points[0].x, s.points[0].y);
+        for (let i = 1; i < s.points.length; i++) {
+          ctx.lineTo(s.points[i].x, s.points[i].y);
+        }
+        if (s.points.length === 1) {
+          ctx.lineTo(s.points[0].x + 0.1, s.points[0].y + 0.1);
+        }
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    function getCoords(e) {
+      const rect = canvas.getBoundingClientRect();
+      let clientX, clientY;
+      if (e.touches && e.touches.length > 0) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+      } else {
+        clientX = e.clientX;
+        clientY = e.clientY;
+      }
+      return { x: clientX - rect.left, y: clientY - rect.top };
+    }
+
+    function startDraw(e) {
+      if (e.cancelable) e.preventDefault();
+      cancelAutoGradeTimer();
+      isDrawing = true;
+      const pt = getCoords(e);
+      if (strokes.length === 0) strokeStartTime = Date.now();
+      const t = Date.now() - strokeStartTime;
+      activeStroke = { tool: currentTool, color: strokeColor, width: strokeWidth, points: [{ x: pt.x, y: pt.y, t }] };
+      strokes.push(activeStroke);
+
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      if (currentTool === 'eraser') {
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.lineWidth = strokeWidth * 4.5;
+      } else {
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = strokeWidth;
+      }
+      ctx.beginPath();
+      ctx.moveTo(pt.x, pt.y);
+      ctx.lineTo(pt.x + 0.1, pt.y + 0.1);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function moveDraw(e) {
+      if (!isDrawing || !activeStroke) return;
+      if (e.cancelable) e.preventDefault();
+      const pt = getCoords(e);
+      const t = Date.now() - strokeStartTime;
+      const prev = activeStroke.points[activeStroke.points.length - 1];
+      activeStroke.points.push({ x: pt.x, y: pt.y, t });
+
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      if (activeStroke.tool === 'eraser') {
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.lineWidth = activeStroke.width * 4.5;
+      } else {
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.strokeStyle = activeStroke.color;
+        ctx.lineWidth = activeStroke.width;
+      }
+      ctx.beginPath();
+      ctx.moveTo(prev.x, prev.y);
+      ctx.lineTo(pt.x, pt.y);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function endDraw() {
+      if (!isDrawing) return;
+      isDrawing = false;
+      activeStroke = null;
+      if (autoGradeEnabled && hasPenStrokes()) scheduleAutoGrade();
+    }
+
+    function bindCanvasEvents() {
+      if (window.PointerEvent) {
+        canvas.addEventListener('pointerdown', (e) => { canvas.setPointerCapture(e.pointerId); startDraw(e); });
+        canvas.addEventListener('pointermove', moveDraw);
+        canvas.addEventListener('pointerup', endDraw);
+        canvas.addEventListener('pointercancel', endDraw);
+      } else {
+        canvas.addEventListener('mousedown', startDraw);
+        window.addEventListener('mousemove', moveDraw);
+        window.addEventListener('mouseup', endDraw);
+        canvas.addEventListener('touchstart', startDraw, { passive: false });
+        canvas.addEventListener('touchmove', moveDraw, { passive: false });
+        canvas.addEventListener('touchend', endDraw);
+      }
+    }
+
+    function hasPenStrokes() {
+      return strokes.some(s => s.tool === 'pen' && s.points.length > 0);
+    }
+
+    function scheduleAutoGrade() {
+      cancelAutoGradeTimer();
+      const badge = document.getElementById('countdownBadge');
+      let remaining = 5.0;
+      badge.textContent = `${remaining.toFixed(1)}초 후 자동 채점...`;
+      badge.classList.remove('hidden');
+
+      countdownInterval = setInterval(() => {
+        remaining = Math.max(0, remaining - 0.1);
+        badge.textContent = `${remaining.toFixed(1)}초 후 자동 채점...`;
+      }, 100);
+
+      autoGradeTimer = setTimeout(() => {
+        cancelAutoGradeTimer();
+        runGrading();
+      }, 5000);
+    }
+
+    function cancelAutoGradeTimer() {
+      if (autoGradeTimer) { clearTimeout(autoGradeTimer); autoGradeTimer = null; }
+      if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
+      document.getElementById('countdownBadge').classList.add('hidden');
+    }
+
+    function normalizeJp(str) {
+      return (str || '').replace(/[\s　、。，．,\.\?\!？！」』「『\(\)（）・]/g, '').trim();
+    }
+
+    function splitStrokesByRegion() {
+      const rect = wrapper.getBoundingClientRect();
+      const splitY = rect.height * 0.36;
+      const furiStrokes = [];
+      const mainStrokes = [];
+      for (const s of strokes) {
+        if (s.tool !== 'pen' || s.points.length === 0) continue;
+        const avgY = s.points.reduce((acc, p) => acc + p.y, 0) / s.points.length;
+        if (avgY < splitY) furiStrokes.push(s);
+        else mainStrokes.push(s);
+      }
+      return { furiStrokes, mainStrokes, width: Math.round(rect.width), height: Math.round(rect.height) };
+    }
+
+    async function recognizeInk(strokeList, w, h) {
+      if (!strokeList || strokeList.length === 0) return [];
+      const ink = strokeList.map(s => [
+        s.points.map(p => Math.round(p.x)),
+        s.points.map(p => Math.round(p.y)),
+        s.points.map(p => Math.round(p.t))
+      ]);
+      const payload = {
+        options: "enable_pre_space",
+        requests: [{ writing_guide: { writing_area_width: w, writing_area_height: h }, ink: ink, language: "ja" }]
+      };
+      const res = await fetch("https://inputtools.google.com/request?ime=handwriting&app=mobilesearch&cs=1&oe=UTF-8", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data && data[0] === "SUCCESS" && data[1] && data[1][0] && data[1][0][1]) return data[1][0][1];
+      return [];
+    }
+
+    function analyzeDiff(expectedRaw, actualRaw) {
+      const exp = normalizeJp(expectedRaw);
+      const act = normalizeJp(actualRaw);
+      if (exp === act) return { exactMatch: true, missing: [], wrongPairs: [], extra: [] };
+
+      const m = exp.length, n = act.length;
+      const dp = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+      for (let i = m - 1; i >= 0; i--) {
+        for (let j = n - 1; j >= 0; j--) {
+          if (exp[i] === act[j]) dp[i][j] = 1 + dp[i + 1][j + 1];
+          else dp[i][j] = Math.max(dp[i + 1][j], dp[i][j + 1]);
+        }
+      }
+
+      let i = 0, j = 0;
+      const missingChars = [], wrongPairs = [], extraChars = [];
+      while (i < m && j < n) {
+        if (exp[i] === act[j]) { i++; j++; }
+        else if (dp[i + 1][j] === dp[i][j + 1]) { wrongPairs.push({ expected: exp[i], actual: act[j] }); i++; j++; }
+        else if (dp[i + 1][j] > dp[i][j + 1]) { missingChars.push(exp[i]); i++; }
+        else { extraChars.push(act[j]); j++; }
+      }
+      while (i < m) { missingChars.push(exp[i]); i++; }
+      while (j < n) { extraChars.push(act[j]); j++; }
+      return { exactMatch: false, missing: missingChars, wrongPairs, extra: extraChars };
+    }
+
+    function pickBestCandidate(candidates, expectedRaw) {
+      if (!candidates || candidates.length === 0) return "";
+      const expNorm = normalizeJp(expectedRaw);
+      for (const c of candidates) { if (normalizeJp(c) === expNorm) return c; }
+      let best = candidates[0], bestScore = -999;
+      for (const c of candidates) {
+        const diff = analyzeDiff(expectedRaw, c);
+        const penalty = diff.missing.length * 2 + diff.wrongPairs.length * 2 + diff.extra.length;
+        const score = normalizeJp(c).length - penalty;
+        if (score > bestScore) { bestScore = score; best = c; }
+      }
+      return best;
+    }
+
+    async function runGrading() {
+      cancelAutoGradeTimer();
+      const q = QUESTIONS[currentIndex];
+      const gradeBtn = document.getElementById('gradeNowBtn');
+      gradeBtn.disabled = true;
+      gradeBtn.textContent = "⏳ 손글씨 판독 중...";
+
+      const { furiStrokes, mainStrokes, width, height } = splitStrokesByRegion();
+      const feedbacks = [];
+      let isAllCorrect = true;
+
+      try {
+        let recognizedMain = "";
+        if (mainStrokes.length === 0) {
+          isAllCorrect = false;
+          feedbacks.push("❌ 하단 본문 영역에 글씨를 쓰지 않았습니다.");
+        } else {
+          const mainCandidates = await recognizeInk(mainStrokes, width, height);
+          recognizedMain = pickBestCandidate(mainCandidates, q.main);
+        }
+
+        let recognizedFuri = "";
+        const expectedFuriCombined = q.kanjis.map(item => item.r).join("");
+        if (q.kanjis.length > 0) {
+          if (furiStrokes.length === 0) {
+            isAllCorrect = false;
+            const listStr = q.kanjis.map(item => `'${item.k}'(${item.r})`).join(", ");
+            feedbacks.push(`❌ 상단 후리가나 영역이 비어 있습니다! 필수 후리가나: ${listStr}`);
+          } else {
+            const furiCandidates = await recognizeInk(furiStrokes, width, height);
+            recognizedFuri = pickBestCandidate(furiCandidates, expectedFuriCombined);
+          }
+        }
+
+        if (mainStrokes.length > 0) {
+          const mainDiff = analyzeDiff(q.main, recognizedMain);
+          if (!mainDiff.exactMatch) {
+            isAllCorrect = false;
+            if (mainDiff.missing.length > 0) {
+              const uniqueMissing = [...new Set(mainDiff.missing)].map(ch => `'${ch}'`).join(", ");
+              feedbacks.push(`🔍 본문 빠진 글자(누락): ${uniqueMissing} 글자가 빠졌어요!`);
+            }
+            if (mainDiff.wrongPairs.length > 0) {
+              for (const wp of mainDiff.wrongPairs) {
+                feedbacks.push(`✏️ 본문 틀린 글자(오탈자): '${wp.expected}' 대신 '${wp.actual}'(으)로 인식되었어요.`);
+              }
+            }
+            if (mainDiff.extra.length > 0) {
+              const uniqueExtra = [...new Set(mainDiff.extra)].map(ch => `'${ch}'`).join(", ");
+              feedbacks.push(`➕ 본문 불필요한 글자: 정답에 없는 ${uniqueExtra} 글자가 더 들어갔어요.`);
+            }
+          }
+        }
+
+        if (q.kanjis.length > 0 && furiStrokes.length > 0) {
+          const furiDiff = analyzeDiff(expectedFuriCombined, recognizedFuri);
+          if (!furiDiff.exactMatch) {
+            isAllCorrect = false;
+            const normFuri = normalizeJp(recognizedFuri);
+            for (const item of q.kanjis) {
+              if (!normFuri.includes(item.r)) {
+                feedbacks.push(`📌 후리가나 누락/오류: '${item.k}'의 후리가나 '${item.r}'이(가) 정확히 쓰이지 않았어요!`);
+              }
+            }
+            if (furiDiff.missing.length > 0) {
+              const missF = [...new Set(furiDiff.missing)].map(ch => `'${ch}'`).join(", ");
+              feedbacks.push(`🔍 후리가나 빠진 글자: ${missF} 글자가 빠졌어요!`);
+            }
+            if (furiDiff.wrongPairs.length > 0) {
+              for (const wp of furiDiff.wrongPairs) {
+                feedbacks.push(`✏️ 후리가나 틀린 글자: '${wp.expected}' 대신 '${wp.actual}'(으)로 쓰였어요.`);
+              }
+            }
+          }
+        }
+
+        if (isAllCorrect) {
+          feedbacks.push("🎉 완벽합니다! 본문의 한자·숫자·가나와 그 위의 후리가나까지 단 한 글자도 틀리지 않고 정확하게 쓰셨어요! (쿠키 저장 완료)");
+        }
+
+        renderResultUI(isAllCorrect, recognizedFuri, recognizedMain, expectedFuriCombined, feedbacks);
+      } catch (err) {
+        renderResultUI(false, "(인식 서버 연결 대기)", "(인식 서버 연결 대기)", q.kanjis.map(k => k.r).join(" "), [
+          "⚠️ 현재 인터넷 연결이 원활하지 않아 온라인 필기체 판독 서버에 접속하지 못했습니다.",
+          "🔍 아래 '내 글씨 위에 정답 겹쳐보기' 버튼을 눌러 한자·숫자와 후리가나가 한 글자라도 빠지거나 틀리지 않았는지 확인해 주세요."
+        ]);
+        document.getElementById('overlayAnswer').classList.add('visible');
+      } finally {
+        gradeBtn.disabled = false;
+        gradeBtn.textContent = "✨ 지금 채점하기";
+      }
+    }
+
+    function renderResultUI(isCorrect, recFuri, recMain, expFuri, feedbacks) {
+      const q = QUESTIONS[currentIndex];
+      const section = document.getElementById('resultSection');
+      const title = document.getElementById('resultTitle');
+      const badge = document.getElementById('resultScoreBadge');
+      section.classList.remove('hidden', 'bg-emerald-50', 'border-emerald-300', 'bg-rose-50', 'border-rose-300');
+
+      if (isCorrect) {
+        solvedIds.add(q.id); wrongIds.delete(q.id);
+        section.classList.add('bg-emerald-50', 'border-emerald-300');
+        title.textContent = "⭕ 정답입니다! (100% 완벽 일치 · 쿠키 저장됨)";
+        title.className = "text-base font-extrabold text-emerald-800";
+        badge.textContent = "PASS";
+        badge.className = "text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-200 text-emerald-900";
+      } else {
+        wrongIds.add(q.id); solvedIds.delete(q.id);
+        section.classList.add('bg-rose-50', 'border-rose-300');
+        title.textContent = "❌ 오답입니다 (글자 누락 또는 오탈자 발생 · 쿠키 저장됨)";
+        title.className = "text-base font-extrabold text-rose-800";
+        badge.textContent = "재도전 필요";
+        badge.className = "text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-rose-200 text-rose-900";
+      }
+
+      saveProgressToCookie();
+
+      document.getElementById('recognizedFuriText').textContent =
+        q.kanjis.length === 0 ? "(후리가나 불필요 문항)" : (recFuri || "(인식된 글자 없음)");
+      document.getElementById('expectedFuriHint').textContent =
+        q.kanjis.length === 0 ? "한자·숫자가 없는 문장입니다." : `필수 후리가나: ${q.kanjis.map(k => `${k.k}(${k.r})`).join(', ')}`;
+      document.getElementById('recognizedMainText').textContent = recMain || "(인식된 글자 없음)";
+      document.getElementById('expectedMainHint').textContent = `정답 본문: ${q.main}`;
+      document.getElementById('modelAnswerRuby').innerHTML = q.ruby;
+
+      document.getElementById('feedbackList').innerHTML = feedbacks.map(f => `<li>${f}</li>`).join('');
+      updateCounters();
+      section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function markResultManual(isCorrect) {
+      const q = QUESTIONS[currentIndex];
+      if (isCorrect) { solvedIds.add(q.id); wrongIds.delete(q.id); }
+      else { wrongIds.add(q.id); solvedIds.delete(q.id); }
+      saveProgressToCookie();
+      updateCounters();
+      renderResultUI(
+        isCorrect, "직접 채점 완료", "직접 채점 완료", q.kanjis.map(k => k.r).join(", "),
+        [isCorrect ? "⭕ 직접 정답으로 체크하고 쿠키에 저장했습니다." : "❌ 직접 오답으로 체크하고 쿠키에 저장했습니다. 모범 답안을 보고 다시 써보세요."]
+      );
+    }
+
+    function loadQuestion(idx) {
+      cancelAutoGradeTimer();
+      currentIndex = idx;
+      saveProgressToCookie();
+
+      const q = QUESTIONS[currentIndex];
+      document.getElementById('questionSelect').value = currentIndex;
+      document.getElementById('koreanPrompt').textContent = `${q.id}번. ${q.ko}`;
+
+      const badge = document.getElementById('kanjiBadge');
+      if (q.kanjis.length > 0) {
+        badge.textContent = `후리가나 필수 (${q.kanjis.length}개 항목)`;
+        badge.className = "text-xs font-bold px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200";
+      } else {
+        badge.textContent = "가나 전용 문항";
+        badge.className = "text-xs font-bold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200";
+      }
+
+      updateCurrentStatusBadge();
+
+      const hintBox = document.getElementById('hintBox');
+      hintBox.classList.add('hidden');
+      hintBox.innerHTML = q.kanjis.length > 0
+        ? `💡 필수 후리가나 힌트: <b>${q.kanjis.map(k => `${k.k} (${k.r})`).join(' / ')}</b>`
+        : `💡 한자나 숫자가 없는 문장입니다. 히라가나·가타카나와 조사(は, を, へ 등) 철자에 주의하세요!`;
+
+      document.getElementById('overlayAnswer').innerHTML = q.ruby;
+      document.getElementById('overlayAnswer').classList.remove('visible');
+      document.getElementById('resultSection').classList.add('hidden');
+      clearCanvas();
+    }
+
+    function clearCanvas() {
+      cancelAutoGradeTimer();
+      strokes = []; activeStroke = null;
+      const rect = wrapper.getBoundingClientRect();
+      ctx.clearRect(0, 0, rect.width, rect.height);
+    }
+
+    function undoStroke() {
+      cancelAutoGradeTimer();
+      if (strokes.length > 0) {
+        strokes.pop();
+        redrawAllStrokes();
+        if (autoGradeEnabled && hasPenStrokes()) scheduleAutoGrade();
+      }
+    }
+
+    function setTool(tool) {
+      currentTool = tool;
+      document.getElementById('penToolBtn').className = tool === 'pen'
+        ? "px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-800 text-white"
+        : "px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-700";
+      document.getElementById('eraserToolBtn').className = tool === 'eraser'
+        ? "px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-800 text-white"
+        : "px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 text-slate-700";
+    }
+
+    function setColor(color) { strokeColor = color; setTool('pen'); }
+    function setLineWidth(w) { strokeWidth = w; }
+
+    function toggleAutoGrade() {
+      autoGradeEnabled = !autoGradeEnabled;
+      const btn = document.getElementById('toggleAutoBtn');
+      if (autoGradeEnabled) {
+        btn.textContent = "● 자동 채점 ON (5.0초)";
+        btn.className = "px-3 py-1.5 rounded-full font-bold bg-indigo-100 text-indigo-700 border border-indigo-200 transition";
+      } else {
+        cancelAutoGradeTimer();
+        btn.textContent = "○ 자동 채점 OFF";
+        btn.className = "px-3 py-1.5 rounded-full font-bold bg-slate-100 text-slate-600 border border-slate-200 transition";
+      }
+    }
+
+    function toggleWrongOnly() {
+      if (!wrongOnlyMode && wrongIds.size === 0) { alert("아직 오답으로 기록된 문항이 없습니다!"); return; }
+      wrongOnlyMode = !wrongOnlyMode;
+      const btn = document.getElementById('wrongOnlyBtn');
+      btn.className = wrongOnlyMode
+        ? "px-3 py-1.5 rounded-full font-bold bg-rose-600 text-white border border-rose-600 transition"
+        : "px-3 py-1.5 rounded-full font-bold bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 transition";
+      if (wrongOnlyMode) {
+        const firstWrongId = Array.from(wrongIds)[0];
+        const idx = QUESTIONS.findIndex(q => q.id === firstWrongId);
+        if (idx !== -1) loadQuestion(idx);
+      }
+    }
+
+    function updateCounters() {
+      document.getElementById('solvedCount').textContent = solvedIds.size;
+      document.getElementById('wrongCount').textContent = wrongIds.size;
+    }
+
+    function selectQuestion(idx) { loadQuestion(idx); }
+
+    function prevQuestion() {
+      if (wrongOnlyMode) {
+        if (wrongIds.size === 0) {
+          alert("🎉 남은 오답 문항이 모두 해결되었습니다! 오답 모드를 해제합니다.");
+          wrongOnlyMode = false;
+          document.getElementById('wrongOnlyBtn').className = "px-3 py-1.5 rounded-full font-bold bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 transition";
+          loadQuestion((currentIndex - 1 + QUESTIONS.length) % QUESTIONS.length);
+          return;
+        }
+        const list = QUESTIONS.map((q, i) => ({ id: q.id, i })).filter(x => wrongIds.has(x.id));
+        const pos = list.findIndex(x => x.i === currentIndex);
+        if (pos !== -1) {
+          loadQuestion(list[(pos - 1 + list.length) % list.length].i);
+        } else {
+          // 방금 정답을 맞혀 현재 문제가 오답 목록에서 제외된 경우: 현재 번호보다 앞에 있는 가장 가까운 오답으로 이동
+          const prevItems = list.filter(x => x.i < currentIndex);
+          loadQuestion(prevItems.length > 0 ? prevItems[prevItems.length - 1].i : list[list.length - 1].i);
+        }
+      } else {
+        loadQuestion((currentIndex - 1 + QUESTIONS.length) % QUESTIONS.length);
+      }
+    }
+
+    function nextQuestion() {
+      if (wrongOnlyMode) {
+        if (wrongIds.size === 0) {
+          alert("🎉 남은 오답 문항이 모두 해결되었습니다! 오답 모드를 해제합니다.");
+          wrongOnlyMode = false;
+          document.getElementById('wrongOnlyBtn').className = "px-3 py-1.5 rounded-full font-bold bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 transition";
+          loadQuestion((currentIndex + 1) % QUESTIONS.length);
+          return;
+        }
+        const list = QUESTIONS.map((q, i) => ({ id: q.id, i })).filter(x => wrongIds.has(x.id));
+        const pos = list.findIndex(x => x.i === currentIndex);
+        if (pos !== -1) {
+          loadQuestion(list[(pos + 1) % list.length].i);
+        } else {
+          // 방금 정답을 맞혀 현재 문제가 오답 목록에서 제외된 경우: 현재 번호 다음의 가장 가까운 오답으로 이동
+          const nextItem = list.find(x => x.i > currentIndex);
+          loadQuestion(nextItem ? nextItem.i : list[0].i);
+        }
+      } else {
+        loadQuestion((currentIndex + 1) % QUESTIONS.length);
+      }
+    }
+
+    function randomQuestion() {
+      const pool = wrongOnlyMode && wrongIds.size > 0
+        ? QUESTIONS.map((q, i) => i).filter(i => wrongIds.has(QUESTIONS[i].id))
+        : QUESTIONS.map((_, i) => i);
+      loadQuestion(pool[Math.floor(Math.random() * pool.length)]);
+    }
+
+    function toggleHint() { document.getElementById('hintBox').classList.toggle('hidden'); }
+    function toggleOverlay() { document.getElementById('overlayAnswer').classList.toggle('visible'); }
+
+    function speakAnswer() {
+      if (!('speechSynthesis' in window)) return;
+      window.speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(QUESTIONS[currentIndex].main);
+      utter.lang = 'ja-JP'; utter.rate = 0.92;
+      window.speechSynthesis.speak(utter);
+    }
+
+    function initAppOnce() {
+      if (!appInitialized) {
+        appInitialized = true;
+        loadProgressFromCookie();
+
+        const sel = document.getElementById('questionSelect');
+        QUESTIONS.forEach((q, idx) => {
+          const opt = document.createElement('option');
+          opt.value = idx;
+          sel.appendChild(opt);
+        });
+        refreshDropdownLabels();
+        updateCounters();
+        bindCanvasEvents();
+
+        const ro = new ResizeObserver(() => resizeCanvas());
+        ro.observe(wrapper);
+      }
+      requestAnimationFrame(() => {
+        resizeCanvas();
+        loadQuestion(currentIndex);
+      });
+    }
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      await loadPasswordFromFile();
+      if (isAuthenticated()) {
+        unlockApp();
+      } else {
+        document.getElementById('authOverlay').classList.remove('hidden');
+        document.getElementById('passwordInput').focus();
+      }
+    });
+  </script>
+</body>
+</html>
