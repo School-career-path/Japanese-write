@@ -176,7 +176,7 @@
           <button id="wrongOnlyBtn" onclick="toggleWrongOnly()" class="px-3 py-1.5 rounded-full font-bold bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 transition">
             ● 오답만 (<span id="wrongCount">0</span>)
           </button>
-          <button onclick="randomQuestion()" class="px-3 py-1.5 rounded-full font-bold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition">
+          <button id="randomBtn" onclick="randomQuestion()" class="px-3 py-1.5 rounded-full font-bold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition">
             🔀 랜덤
           </button>
           <button id="mockExamBtn" onclick="toggleMockExam()" class="px-3 py-1.5 rounded-full font-bold bg-purple-600 text-white border border-purple-600 hover:bg-purple-700 shadow-sm transition">
@@ -544,6 +544,7 @@
 
     // 모의시험 상태 변수
     let mockExamMode = false;
+    let prevAutoGradeState = true;
     let mockQueue = [];       // 선정된 20개 문항의 QUESTIONS 인덱스 배열
     let mockStep = 0;         // 0 ~ 19
     let mockStrokesStore = []; // 각 문항별 작성한 strokes 스냅샷 저장
@@ -1084,6 +1085,7 @@
     function setLineWidth(w) { strokeWidth = w; }
 
     function toggleAutoGrade() {
+      if (mockExamMode) return;
       autoGradeEnabled = !autoGradeEnabled;
       const btn = document.getElementById('toggleAutoBtn');
       if (autoGradeEnabled) {
@@ -1097,6 +1099,7 @@
     }
 
     function toggleWrongOnly() {
+      if (mockExamMode) return;
       if (!wrongOnlyMode && wrongIds.size === 0) { alert("아직 오답으로 기록된 문항이 없습니다!"); return; }
       wrongOnlyMode = !wrongOnlyMode;
       const btn = document.getElementById('wrongOnlyBtn');
@@ -1164,6 +1167,7 @@
     }
 
     function randomQuestion() {
+      if (mockExamMode) return;
       const pool = wrongOnlyMode && wrongIds.size > 0
         ? QUESTIONS.map((q, i) => i).filter(i => wrongIds.has(QUESTIONS[i].id))
         : QUESTIONS.map((_, i) => i);
@@ -1193,11 +1197,42 @@
       }
     }
 
+    function setHeaderButtonsMockLocked(locked) {
+      const autoBtn = document.getElementById('toggleAutoBtn');
+      const wrongBtn = document.getElementById('wrongOnlyBtn');
+      const randBtn = document.getElementById('randomBtn');
+
+      autoBtn.disabled = locked;
+      wrongBtn.disabled = locked;
+      randBtn.disabled = locked;
+
+      if (locked) {
+        autoBtn.textContent = "○ 자동 채점 OFF";
+        autoBtn.className = "px-3 py-1.5 rounded-full font-bold bg-slate-100 text-slate-400 border border-slate-200 opacity-50 cursor-not-allowed";
+        wrongBtn.className = "px-3 py-1.5 rounded-full font-bold bg-slate-100 text-slate-400 border border-slate-200 opacity-50 cursor-not-allowed";
+        randBtn.className = "px-3 py-1.5 rounded-full font-bold bg-slate-100 text-slate-400 border border-slate-200 opacity-50 cursor-not-allowed";
+      } else {
+        if (autoGradeEnabled) {
+          autoBtn.textContent = "● 자동 채점 ON (5.0초)";
+          autoBtn.className = "px-3 py-1.5 rounded-full font-bold bg-indigo-100 text-indigo-700 border border-indigo-200 transition";
+        } else {
+          autoBtn.textContent = "○ 자동 채점 OFF";
+          autoBtn.className = "px-3 py-1.5 rounded-full font-bold bg-slate-100 text-slate-600 border border-slate-200 transition";
+        }
+        wrongBtn.className = "px-3 py-1.5 rounded-full font-bold bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 transition";
+        randBtn.className = "px-3 py-1.5 rounded-full font-bold bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition";
+      }
+    }
+
     function startMockExam() {
       cancelAutoGradeTimer();
+      if (!mockExamMode) {
+        prevAutoGradeState = autoGradeEnabled;
+      }
       mockExamMode = true;
+      autoGradeEnabled = false;
       wrongOnlyMode = false;
-      document.getElementById('wrongOnlyBtn').className = "px-3 py-1.5 rounded-full font-bold bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 transition";
+      setHeaderButtonsMockLocked(true);
 
       // Fisher-Yates 셔플로 중복 없이 20문항 무작위 추출
       const indices = QUESTIONS.map((_, i) => i);
@@ -1234,6 +1269,8 @@
         if (!confirm("진행 중인 모의시험을 중단하고 일반 연습 모드로 돌아갈까요?")) return;
       }
       mockExamMode = false;
+      autoGradeEnabled = prevAutoGradeState;
+      setHeaderButtonsMockLocked(false);
       mockQueue = [];
       mockStrokesStore = [];
 
