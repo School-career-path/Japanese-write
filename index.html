@@ -143,21 +143,27 @@
         🔒
       </div>
       <h2 class="text-xl font-extrabold text-slate-800 mb-1">학습장 접근 인증</h2>
-      <p class="text-xs text-slate-500 mb-5 leading-relaxed">
-        비밀번호를 입력하면 본 기기 쿠키에 로그인 기록이 저장되어 다음부터는 바로 접속됩니다.<br/>
+      <p id="authDescText" class="text-xs text-slate-500 mb-4 leading-relaxed">
+        일반 비밀번호를 입력하거나 <b>1시간 이용권</b>으로 입장할 수 있습니다.<br/>
+        (1시간 이용권은 입장 시점부터 60분간 유효하며 상단에 남은 시간 타이머가 표시됩니다)
       </p>
 
       <form onsubmit="handleLoginSubmit(event)" class="space-y-3">
         <div>
-          <label for="passwordInput" class="block text-xs font-bold text-slate-700 mb-1">비밀번호</label>
+          <label for="passwordInput" class="block text-xs font-bold text-slate-700 mb-1">비밀번호 / 1시간 이용권 코드</label>
           <input
             id="passwordInput"
             type="password"
             autocomplete="current-password"
-            placeholder="비밀번호를 입력하세요"
+            placeholder="비밀번호 또는 1시간 이용권 코드 입력"
             class="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
             required
           />
+        </div>
+
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-[11px] text-slate-600 space-y-1">
+          <div>🔑 <b>일반 비밀번호</b>: 무기한 로그인 유지 (<code class="text-slate-700 font-semibold">password.txt</code>)</div>
+          <div>⏱️ <b>1시간 이용권 코드</b>: <code class="bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded font-bold">1hour2026</code> (입장 후 60분간 이용 가능)</div>
         </div>
 
         <p id="authErrorMsg" class="hidden text-xs font-bold text-rose-600"></p>
@@ -186,6 +192,10 @@
         </div>
 
         <div class="flex flex-wrap items-center gap-2 text-xs">
+          <div id="passTimerBadge" class="hidden px-3 py-1.5 rounded-full font-extrabold bg-amber-100 text-amber-900 border border-amber-300 shadow-sm flex items-center gap-1.5">
+            <span>⏱️ 1시간 이용권</span>
+            <span id="passTimerText" class="font-mono text-sm text-rose-600">60:00</span>
+          </div>
           <button id="toggleAutoBtn" onclick="toggleAutoGrade()" class="px-3 py-1.5 rounded-full font-bold bg-indigo-100 text-indigo-700 border border-indigo-200 transition">
             ● 자동 채점 ON (5.0초)
           </button>
@@ -375,11 +385,16 @@
 
   <script>
     // ==========================================
-    // 1. 비밀번호 인증 & 쿠키 관리 (password.txt 연동 + 기본값 폴백)
+    // 1. 비밀번호 인증 & 1시간 이용권 타이머 관리
     // ==========================================
     const DEFAULT_PASSWORD = "ansan2026210";
+    const ONE_HOUR_PASS_CODE = "1hour2026";
+    const ONE_HOUR_MS = 60 * 60 * 1000;
     const AUTH_COOKIE_NAME = "jp_handwriting_auth_v1";
+    const PASS_EXPIRY_COOKIE = "jp_handwriting_pass_exp_v1";
+
     let activePassword = DEFAULT_PASSWORD;
+    let passTimerInterval = null;
 
     function setCookie(name, value, days) {
       const expires = new Date(Date.now() + days * 864e5).toUTCString();
@@ -402,38 +417,118 @@
       document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Lax`;
     }
 
-    // 같은 디렉토리의 password.txt 파일을 읽어 비밀번호 반영
+    // 같은 디렉토리의 password.txt 파일을 읽어 비밀번호 반영 (1줄: 일반 비밀번호, 2줄(선택): 1시간 이용권 코드)
+    let activeOneHourCode = ONE_HOUR_PASS_CODE;
     async function loadPasswordFromFile() {
       try {
         const res = await fetch("password.txt?t=" + Date.now(), { cache: "no-store" });
         if (res.ok) {
-          const text = (await res.text()).trim();
-          if (text.length > 0) {
-            activePassword = text;
-          }
+          const lines = (await res.text()).split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+          if (lines.length >= 1) activePassword = lines[0];
+          if (lines.length >= 2) activeOneHourCode = lines[1];
         }
       } catch (e) {
-        // file:// 프로토콜 등에서 브라우저 보안 정책으로 fetch가 차단될 경우 기본값(ansan2026210) 유지
+        // file:// 프로토콜 등에서 브라우저 보안 정책으로 fetch가 차단될 경우 기본값 유지
       }
     }
 
+    function getStoredPassExpiry() {
+      let raw = getCookie(PASS_EXPIRY_COOKIE);
+      if (!raw) {
+        try { raw = localStorage.getItem(PASS_EXPIRY_COOKIE); } catch (e) {}
+      }
+      const ts = Number(raw);
+      return Number.isFinite(ts) && ts > 0 ? ts : 0;
+    }
+
+    function clearPassExpiry() {
+      deleteCookie(PASS_EXPIRY_COOKIE);
+      try { localStorage.removeItem(PASS_EXPIRY_COOKIE); } catch (e) {}
+      if (passTimerInterval) {
+        clearInterval(passTimerInterval);
+        passTimerInterval = null;
+      }
+      const badge = document.getElementById('passTimerBadge');
+      if (badge) badge.classList.add('hidden');
+    }
+
     function isAuthenticated() {
+      // 1) 무기한 일반 비밀번호 확인
       const cookieVal = getCookie(AUTH_COOKIE_NAME);
       if (cookieVal === activePassword) return true;
       try {
         if (localStorage.getItem(AUTH_COOKIE_NAME) === activePassword) return true;
       } catch (e) {}
+
+      // 2) 1시간 이용권 유효시간 확인
+      const expTs = getStoredPassExpiry();
+      if (expTs > Date.now()) {
+        return true;
+      } else if (expTs > 0) {
+        clearPassExpiry();
+      }
       return false;
     }
 
     function saveAuthSession() {
+      clearPassExpiry();
       setCookie(AUTH_COOKIE_NAME, activePassword, 365);
       try { localStorage.setItem(AUTH_COOKIE_NAME, activePassword); } catch (e) {}
+    }
+
+    function startOneHourPassSession() {
+      const expTs = Date.now() + ONE_HOUR_MS;
+      setCookie(PASS_EXPIRY_COOKIE, String(expTs), 1);
+      try { localStorage.setItem(PASS_EXPIRY_COOKIE, String(expTs)); } catch (e) {}
+      startPassCountdown(expTs);
+    }
+
+    function formatRemainingMMSS(ms) {
+      const totalSec = Math.max(0, Math.ceil(ms / 1000));
+      const min = Math.floor(totalSec / 60);
+      const sec = totalSec % 60;
+      return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+    }
+
+    function startPassCountdown(expTs) {
+      if (passTimerInterval) clearInterval(passTimerInterval);
+      const badge = document.getElementById('passTimerBadge');
+      const textEl = document.getElementById('passTimerText');
+      badge.classList.remove('hidden');
+
+      const tick = () => {
+        const left = expTs - Date.now();
+        if (left <= 0) {
+          clearPassExpiry();
+          lockScreenWithExpiredNotice();
+          return;
+        }
+        textEl.textContent = formatRemainingMMSS(left);
+        if (left <= 5 * 60 * 1000) {
+          badge.className = "px-3 py-1.5 rounded-full font-extrabold bg-rose-100 text-rose-900 border border-rose-300 shadow-sm flex items-center gap-1.5 animate-pulse";
+        } else {
+          badge.className = "px-3 py-1.5 rounded-full font-extrabold bg-amber-100 text-amber-900 border border-amber-300 shadow-sm flex items-center gap-1.5";
+        }
+      };
+
+      tick();
+      passTimerInterval = setInterval(tick, 1000);
+    }
+
+    function lockScreenWithExpiredNotice() {
+      cancelAutoGradeTimer();
+      document.getElementById('appContainer').classList.add('hidden');
+      document.getElementById('authOverlay').classList.remove('hidden');
+      document.getElementById('passwordInput').value = "";
+      const errEl = document.getElementById('authErrorMsg');
+      errEl.textContent = "⏰ 1시간 이용권 사용 시간이 만료되었습니다. 계속 이용하려면 다시 인증해 주세요.";
+      errEl.classList.remove('hidden');
     }
 
     function logoutAuthCookie() {
       deleteCookie(AUTH_COOKIE_NAME);
       try { localStorage.removeItem(AUTH_COOKIE_NAME); } catch (e) {}
+      clearPassExpiry();
       document.getElementById('appContainer').classList.add('hidden');
       document.getElementById('authOverlay').classList.remove('hidden');
       document.getElementById('passwordInput').value = "";
@@ -443,6 +538,17 @@
     function unlockApp() {
       document.getElementById('authOverlay').classList.add('hidden');
       document.getElementById('appContainer').classList.remove('hidden');
+
+      // 1시간 이용권으로 접속 중이라면 상단 타이머 가동
+      const isPermanent = getCookie(AUTH_COOKIE_NAME) === activePassword ||
+        (() => { try { return localStorage.getItem(AUTH_COOKIE_NAME) === activePassword; } catch(e){ return false; } })();
+      if (!isPermanent) {
+        const expTs = getStoredPassExpiry();
+        if (expTs > Date.now()) {
+          startPassCountdown(expTs);
+        }
+      }
+
       initAppOnce();
     }
 
@@ -457,8 +563,12 @@
         saveAuthSession();
         errEl.classList.add('hidden');
         unlockApp();
+      } else if (entered === activeOneHourCode) {
+        startOneHourPassSession();
+        errEl.classList.add('hidden');
+        unlockApp();
       } else {
-        errEl.textContent = "❌ 비밀번호가 일치하지 않습니다. 다시 확인해 주세요.";
+        errEl.textContent = "❌ 비밀번호 또는 이용권 코드가 일치하지 않습니다.";
         errEl.classList.remove('hidden');
         card.classList.remove('animate-shake');
         void card.offsetWidth;
