@@ -6,12 +6,28 @@
   <title>일본어 손글씨 & 후리가나 자동 채점 연습장</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    body {
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+    }
+    input, textarea {
+      -webkit-user-select: text;
+      user-select: text;
+      -webkit-touch-callout: default;
+    }
+    html, body {
       font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       background-color: #f3f5f9;
       color: #1e293b;
       overscroll-behavior: none;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
     }
     .jp-font {
       font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", "Noto Sans JP", sans-serif;
@@ -37,6 +53,7 @@
       touch-action: none;
       user-select: none;
       -webkit-user-select: none;
+      -webkit-touch-callout: none;
     }
     #drawCanvas {
       position: absolute;
@@ -46,6 +63,9 @@
       z-index: 20;
       cursor: crosshair;
       touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
     }
     .guide-layer {
       position: absolute;
@@ -124,7 +144,8 @@
       </div>
       <h2 class="text-xl font-extrabold text-slate-800 mb-1">학습장 접근 인증</h2>
       <p class="text-xs text-slate-500 mb-5 leading-relaxed">
-        비밀번호를 입력하면 본 기기 쿠키에 로그인 기록이 저장되어 다음부터는 바로 접속됩니다.
+        비밀번호를 입력하면 본 기기 쿠키에 로그인 기록이 저장되어 다음부터는 바로 접속됩니다.<br/>
+        (같은 폴더의 <code class="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-semibold">password.txt</code>에서 비밀번호를 변경할 수 있습니다)
       </p>
 
       <form onsubmit="handleLoginSubmit(event)" class="space-y-3">
@@ -752,9 +773,34 @@
     }
 
     function bindCanvasEvents() {
+      // iPad Safari 텍스트 선택, 롱프레스 복사/붙여넣기 메뉴, 제스처 확대 원천 차단
+      document.addEventListener('selectstart', (e) => {
+        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+        e.preventDefault();
+      }, { passive: false });
+
+      document.addEventListener('contextmenu', (e) => {
+        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+        e.preventDefault();
+      }, { passive: false });
+
+      [wrapper, canvas].forEach((el) => {
+        el.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+        el.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+        el.addEventListener('gesturestart', (e) => e.preventDefault(), { passive: false });
+        el.addEventListener('gesturechange', (e) => e.preventDefault(), { passive: false });
+      });
+
       if (window.PointerEvent) {
-        canvas.addEventListener('pointerdown', (e) => { canvas.setPointerCapture(e.pointerId); startDraw(e); });
-        canvas.addEventListener('pointermove', moveDraw);
+        canvas.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+          startDraw(e);
+        }, { passive: false });
+        canvas.addEventListener('pointermove', (e) => {
+          e.preventDefault();
+          moveDraw(e);
+        }, { passive: false });
         canvas.addEventListener('pointerup', endDraw);
         canvas.addEventListener('pointercancel', endDraw);
       } else {
